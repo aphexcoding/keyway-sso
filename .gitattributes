@@ -1,0 +1,28 @@
+# What does NOT go into the distributed package.
+#
+# `git archive` (the zipball Composer builds `dist` from) honours `export-ignore`, so this
+# list decides what lands in `vendor/aphexcoding/keyway-sso/` on a customer's server. It is
+# kept in step with `archive.exclude` in composer.json, which is the `composer archive` path.
+#
+#  - `test/` and `bin/` are the test suite and its runner. They are part of this repository
+#    on purpose - a plugin that guards sign-in should let you read what it is tested against -
+#    but nothing on a production server has any use for them. `test/` also pins a throwaway
+#    RSA key pair used to prove that a private key pasted into a certificate field is
+#    REFUSED; it signs nothing and guards nothing, but on a customer's server it would set
+#    off every SAST scanner as a leak it is not.
+#  - `NOTES.md` is the maintainer's build log. It is not documentation and would only
+#    mislead anyone reading it as such.
+#  - `composer.lock` pins the versions this suite is run against. Composer ignores a
+#    dependency's lock file, so nobody downstream reads it; the constraint that actually
+#    applies is `require` in composer.json.
+#
+# `docs/` stays in the package deliberately: for an SSO plugin the deployment guides
+# (Keycloak / Okta / Entra ID / troubleshooting) are part of the product, not a build
+# artefact.
+
+/test              export-ignore
+/bin               export-ignore
+/NOTES.md          export-ignore
+/composer.lock     export-ignore
+/.gitattributes    export-ignore
+/.gitignore        export-ignore

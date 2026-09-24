@@ -1,0 +1,14 @@
+{% extends "_layouts/message" %}
+{% set title = "Single sign-on"|t('app') %}
+
+{#
+  The one page a refused visitor sees. It carries LoginRefusal::PUBLIC_MESSAGE and nothing else:
+  every refusal reads the same on purpose, because a message that varies with the cause is an
+  oracle about the site's configuration and about whether an account exists. The specific reason
+  is in the diagnostics record the administrator reads.
+#}
+{% block message %}
+  <h2>{{ title }}</h2>
+  <p>{{ message }}</p>
+  <p><a class="btn" href="{{ cpUrl('login') }}">{{ "Back to sign in"|t('app') }}</a></p>
+{% endblock %}

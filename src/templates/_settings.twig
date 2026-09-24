@@ -1,0 +1,511 @@
+{# Keyway SSO settings screen.
+
+   Rendered by Keyway\Sso\Plugin::settingsHtml(), inside Craft's own settings page, already
+   namespaced under `settings` - so every field name here is a plain Settings attribute.
+
+   The screen is deliberately one page with three visible sections rather than a wizard: the
+   person configuring SAML has the IdP metadata open in the next tab and wants every field at
+   once. Secrets (SP private key, OIDC client secret) are `autosuggest` env fields, which is how
+   a value stays out of project config and out of the client's git history. #}
+
+{% import "_includes/forms.twig" as forms %}
+
+{# The two addresses an identity provider is configured with, and whether what was typed into
+   the fields below actually reaches them. Both values come from Plugin::settingsHtml(), which
+   builds them from the registered routes - see Keyway\Sso\Config\EndpointMatch for which
+   difference is a warning and which is a remark. `message` is an English source string, so it
+   goes through `|t` here like every other sentence on this screen. #}
+{% set acsNote = acsMatch.message ? acsMatch.message|t('keyway-sso') : null %}
+{% set callbackNote = callbackMatch.message ? callbackMatch.message|t('keyway-sso') : null %}
+
+{% if warnings is not empty %}
+    {% for warning in warnings %}
+        <p class="warning with-icon">{{ warning }}</p>
+    {% endfor %}
+{% endif %}
+
+{% if settings.protocol != 'disabled' and not ready %}
+    <p class="warning with-icon">
+        {{ "Single sign-on is selected but the connection is not usable yet, so the login screen keeps password login only. Fix the errors below and save again."|t('keyway-sso') }}
+    </p>
+{% endif %}
+
+<h2>{{ "Identity provider"|t('keyway-sso') }}</h2>
+
+{{ forms.selectField({
+    label: "Protocol"|t('keyway-sso'),
+    instructions: "Which protocol this site signs people in with. `Disabled` leaves the login screen untouched."|t('keyway-sso'),
+    id: 'protocol',
+    name: 'protocol',
+    options: protocolOptions,
+    value: settings.protocol,
+    toggle: true,
+    targetPrefix: 'protocol-',
+    errors: settings.getErrors('protocol'),
+}) }}
+
+{{ forms.textField({
+    label: "Login button label"|t('keyway-sso'),
+    instructions: "Text on the single sign-on button on the control panel login screen."|t('keyway-sso'),
+    id: 'buttonLabel',
+    name: 'buttonLabel',
+    value: settings.buttonLabel,
+    errors: settings.getErrors('buttonLabel'),
+}) }}
+
+<div id="protocol-saml" class="{{ settings.protocol == 'saml' ? '' : 'hidden' }}">
+    <h2>{{ "SAML 2.0"|t('keyway-sso') }}</h2>
+
+    {{ forms.textField({
+        label: "IdP entity ID"|t('keyway-sso'),
+        instructions: "The `entityID` from your identity provider's metadata. Compared byte for byte against the assertion issuer."|t('keyway-sso'),
+        name: 'samlIdpEntityId',
+        value: settings.samlIdpEntityId,
+        errors: settings.getErrors('samlIdpEntityId'),
+    }) }}
+
+    {{ forms.textareaField({
+        label: "IdP signing certificate"|t('keyway-sso'),
+        instructions: "The X.509 signing certificate, PEM or base64. A fingerprint is not accepted: it proves which certificate the message carried, not which one you trust."|t('keyway-sso'),
+        name: 'samlIdpCertificate',
+        value: settings.samlIdpCertificate,
+        rows: 6,
+        class: 'code',
+        errors: settings.getErrors('samlIdpCertificate'),
+    }) }}
+
+    {{ forms.textField({
+        label: "IdP SSO URL"|t('keyway-sso'),
+        instructions: "Where this site sends the authentication request: the identity provider's HTTP-Redirect single sign-on endpoint. Must be an absolute URL."|t('keyway-sso'),
+        name: 'samlIdpSsoUrl',
+        value: settings.samlIdpSsoUrl,
+        errors: settings.getErrors('samlIdpSsoUrl'),
+    }) }}
+
+    {{ forms.textField({
+        label: "IdP single logout URL"|t('keyway-sso'),
+        instructions: "Optional. Where the identity provider receives LogoutRequests, and the address its own arrive from. Leave empty to keep single logout off: it needs this, the SP single logout URL below and an SP private key together, and a half-configured endpoint would answer every message with a refusal."|t('keyway-sso'),
+        name: 'samlIdpSloUrl',
+        value: settings.samlIdpSloUrl,
+        errors: settings.getErrors('samlIdpSloUrl'),
+    }) }}
+
+    {# Ours, not theirs, and derived rather than typed - the same rule as the metadata URL:
+       Plugin::sloUrl() builds it from the registered route, so the address on screen cannot
+       drift from the endpoint that answers. `sloReady` is SamlConnectionConfig::canLogout(),
+       asked once in Plugin::settingsHtml() rather than re-derived here. #}
+    {{ forms.copytextField({
+        label: "SP single logout URL"|t('keyway-sso'),
+        instructions: (sloReady
+            ? "Paste this into the identity provider as this site's SingleLogoutService address, HTTP-Redirect binding. It is also published in the metadata document below."|t('keyway-sso')
+            : "Where single logout will answer once the IdP single logout URL above and an SP private key are both set. Until then this address refuses every message and the metadata document does not advertise it."|t('keyway-sso')),
+        id: 'keywaySloUrl',
+        value: sloUrl,
+    }) }}
+
+    {{ forms.copytextField({
+        label: "This site's URL"|t('keyway-sso'),
+        instructions: "The usual choice for the SP entity ID below - copy it if you have no preference. An entity ID is an identifier, not an address: any stable string both sides agree on works, as long as it is the same one here and at the identity provider."|t('keyway-sso'),
+        id: 'keywaySpEntityIdSuggestion',
+        value: spEntityId,
+    }) }}
+
+    {{ forms.textField({
+        label: "SP entity ID"|t('keyway-sso'),
+        instructions: "This site's identifier, as registered with the identity provider."|t('keyway-sso'),
+        name: 'samlSpEntityId',
+        value: settings.samlSpEntityId,
+        errors: settings.getErrors('samlSpEntityId'),
+    }) }}
+
+    {{ forms.copytextField({
+        label: "ACS URL this site answers on"|t('keyway-sso'),
+        instructions: "Give this address to your identity provider and paste it into the field below - both sides compare it character for character. It carries no control panel prefix on purpose: that prefix can be changed at any time, and a changed ACS URL is a SAML configuration that stops validating."|t('keyway-sso'),
+        id: 'keywayAcsUrl',
+        value: acsUrl,
+    }) }}
+
+    {# Service provider metadata. The link is shown whatever the state of the fields above, but
+       what it says changes: an identity provider configured from a document naming a blank
+       entity id is an identity provider configured against a login that can never validate, so
+       SettingsTranslator::spMetadata() returns null until both values are usable and the
+       endpoint answers 404 until then. `metadataReady` is that same decision, asked once in
+       Plugin::settingsHtml() rather than re-derived here - a template that re-derives a rule is
+       a rule with two versions. #}
+    <div class="field">
+        <div class="heading">
+            <label>{{ "Service provider metadata"|t('keyway-sso') }}</label>
+        </div>
+        <div class="instructions">
+            <p>
+                {% if metadataReady %}
+                    {{ "Most identity providers can configure themselves from this file - upload it to Okta, Keycloak or Entra ID instead of typing the entity ID and ACS URL by hand. Some fetch the address directly and re-read it on a schedule."|t('keyway-sso') }}
+                {% else %}
+                    {{ "Available once SAML is selected above and both the SP entity ID and the ACS URL are filled in. Until then this address answers 404 on purpose: a metadata file naming a blank entity ID would configure your identity provider against a sign-in that can never validate."|t('keyway-sso') }}
+                {% endif %}
+            </p>
+        </div>
+        <div class="input">
+            <p>
+                {# A SPAN and not a greyed-out link when there is nothing to serve. Craft's
+                   `.disabled` sets `cursor: not-allowed` and `opacity: .5` and NOTHING ELSE - no
+                   `pointer-events: none` - so an `<a href>` carrying that class is fully
+                   clickable with a mouse and reachable with Tab+Enter. The administrator would
+                   click a button that looks disabled and land on a 404, out of the settings
+                   screen entirely, which is the exact confusion the text above it exists to
+                   prevent. It would also make `aria-disabled` a lie to a screen reader. #}
+                {% if metadataReady %}
+                    <a class="btn" href="{{ metadataUrl }}">{{ "Download metadata"|t('keyway-sso') }}</a>
+                {% else %}
+                    <span class="btn disabled" aria-disabled="true">{{ "Download metadata"|t('keyway-sso') }}</span>
+                {% endif %}
+            </p>
+        </div>
+    </div>
+
+    {{ forms.copytextField({
+        label: "Metadata URL"|t('keyway-sso'),
+        instructions: (metadataReady
+            ? "The same document, at an address an identity provider can fetch itself. Like the ACS URL, it carries no control panel prefix: that prefix can be renamed, and a renamed metadata URL stops being fetched without anybody noticing."|t('keyway-sso')
+            : "This is where the document will be served once SAML is configured above. Right now the address answers 404, so do not hand it to an identity provider yet."|t('keyway-sso')),
+        id: 'keywayMetadataUrl',
+        value: metadataUrl,
+    }) }}
+
+    {{ forms.textField({
+        label: "ACS URL"|t('keyway-sso'),
+        instructions: "Where the identity provider posts the assertion. Must be an absolute URL on this site."|t('keyway-sso'),
+        name: 'samlAcsUrl',
+        value: settings.samlAcsUrl,
+        tip: acsMatch.isWarning ? null : acsNote,
+        warning: acsMatch.isWarning ? acsNote : null,
+        errors: settings.getErrors('samlAcsUrl'),
+    }) }}
+
+    {{ forms.autosuggestField({
+        label: "SP private key"|t('keyway-sso'),
+        instructions: "Needed for encrypted assertions, and for single logout: the plugin signs its logout messages with this key. Use an environment variable."|t('keyway-sso'),
+        name: 'samlSpPrivateKey',
+        value: settings.samlSpPrivateKey,
+        suggestEnvVars: true,
+        errors: settings.getErrors('samlSpPrivateKey'),
+    }) }}
+
+    {{ forms.textField({
+        label: "Clock skew (seconds)"|t('keyway-sso'),
+        instructions: "Tolerance when checking assertion validity windows. Maximum 120 seconds; the checks themselves cannot be turned off."|t('keyway-sso'),
+        name: 'samlClockSkew',
+        type: 'number',
+        size: 5,
+        value: settings.samlClockSkew,
+        errors: settings.getErrors('samlClockSkew'),
+    }) }}
+</div>
+
+<div id="protocol-oidc" class="{{ settings.protocol == 'oidc' ? '' : 'hidden' }}">
+    <h2>{{ "OpenID Connect"|t('keyway-sso') }}</h2>
+
+    {{ forms.textField({
+        label: "Issuer"|t('keyway-sso'),
+        instructions: "The issuer URL, https only. Discovery appends `/.well-known/openid-configuration` to it, and it is compared byte for byte against the `iss` claim - including or excluding a trailing slash."|t('keyway-sso'),
+        name: 'oidcIssuer',
+        value: settings.oidcIssuer,
+        errors: settings.getErrors('oidcIssuer'),
+    }) }}
+
+    {{ forms.textField({
+        label: "Client ID"|t('keyway-sso'),
+        name: 'oidcClientId',
+        value: settings.oidcClientId,
+        errors: settings.getErrors('oidcClientId'),
+    }) }}
+
+    {{ forms.autosuggestField({
+        label: "Client secret"|t('keyway-sso'),
+        instructions: "Leave empty for a public client. PKCE is mandatory either way."|t('keyway-sso'),
+        name: 'oidcClientSecret',
+        value: settings.oidcClientSecret,
+        suggestEnvVars: true,
+        errors: settings.getErrors('oidcClientSecret'),
+    }) }}
+
+    {{ forms.copytextField({
+        label: "Redirect URI this site answers on"|t('keyway-sso'),
+        instructions: "Register this address with your identity provider and paste it into the field below. It carries no control panel prefix on purpose: that prefix can be changed at any time, and a redirect URI the provider no longer recognises stops every login. If the address below contains `index.php?p=`, this site generates URLs with the script name in them - some providers, Google among them, refuse a redirect URI with a query string, and such a site needs `omitScriptNameInUrls` turned on before OpenID Connect can be registered."|t('keyway-sso'),
+        id: 'keywayRedirectUri',
+        value: callbackUrl,
+    }) }}
+
+    {{ forms.textField({
+        label: "Redirect URI"|t('keyway-sso'),
+        instructions: "Where the authorization code comes back to, https only. Register exactly this value with the identity provider."|t('keyway-sso'),
+        name: 'oidcRedirectUri',
+        value: settings.oidcRedirectUri,
+        tip: callbackMatch.isWarning ? null : callbackNote,
+        warning: callbackMatch.isWarning ? callbackNote : null,
+        errors: settings.getErrors('oidcRedirectUri'),
+    }) }}
+
+    {{ forms.textareaField({
+        label: "Scopes"|t('keyway-sso'),
+        instructions: "One per line. `openid` is added automatically."|t('keyway-sso'),
+        name: 'oidcScopes',
+        value: settings.oidcScopes is iterable ? settings.oidcScopes|join("\n") : settings.oidcScopes,
+        rows: 3,
+        errors: settings.getErrors('oidcScopes'),
+    }) }}
+
+    {{ forms.lightswitchField({
+        label: "Fetch userinfo"|t('keyway-sso'),
+        instructions: "Ask the userinfo endpoint for attributes missing from the id token. The id token stays the source of identity."|t('keyway-sso'),
+        name: 'oidcFetchUserinfo',
+        on: settings.oidcFetchUserinfo,
+    }) }}
+
+    {{ forms.textField({
+        label: "Clock skew (seconds)"|t('keyway-sso'),
+        instructions: "Tolerance when checking id token times. Maximum 120 seconds."|t('keyway-sso'),
+        name: 'oidcClockSkew',
+        type: 'number',
+        size: 5,
+        value: settings.oidcClockSkew,
+        errors: settings.getErrors('oidcClockSkew'),
+    }) }}
+</div>
+
+<hr>
+
+<h2>{{ "Attribute mapping"|t('keyway-sso') }}</h2>
+
+{{ forms.editableTableField({
+    label: "Attributes"|t('keyway-sso'),
+    instructions: "Identity provider attribute to Craft user field. Leave the table empty to use the defaults (email, firstName, lastName). Targets are email, username, firstName, lastName, fullName, or `field:handle` for a custom field. Sources `@nameId` and `@issuer` read the assertion itself."|t('keyway-sso'),
+    id: 'attributeRules',
+    name: 'attributeRules',
+    cols: {
+        source: { heading: "IdP attribute"|t('keyway-sso'), type: 'singleline', code: true },
+        target: { heading: "User field"|t('keyway-sso'), type: 'singleline', code: true },
+        strategy: { heading: "Multiple values"|t('keyway-sso'), type: 'select', options: {
+            first: "First"|t('keyway-sso'),
+            last: "Last"|t('keyway-sso'),
+            join: "Join"|t('keyway-sso'),
+        } },
+        transform: { heading: "Transform"|t('keyway-sso'), type: 'select', options: {
+            none: "None"|t('keyway-sso'),
+            lowercase: "Lowercase"|t('keyway-sso'),
+            uppercase: "Uppercase"|t('keyway-sso'),
+        } },
+        required: { heading: "Required"|t('keyway-sso'), type: 'lightswitch' },
+        defaultValue: { heading: "Default"|t('keyway-sso'), type: 'singleline' },
+    },
+    rows: settings.attributeRules,
+    addRowLabel: "Add a mapping"|t('keyway-sso'),
+    errors: settings.getErrors('attributeRules'),
+}) }}
+
+<h2>{{ "Group mapping"|t('keyway-sso') }}</h2>
+
+{{ forms.textareaField({
+    label: "Source attributes"|t('keyway-sso'),
+    instructions: "Which attributes carry group membership, one per line."|t('keyway-sso'),
+    name: 'groupSourceAttributes',
+    value: settings.groupSourceAttributes is iterable ? settings.groupSourceAttributes|join("\n") : settings.groupSourceAttributes,
+    rows: 2,
+    errors: settings.getErrors('groupSourceAttributes'),
+}) }}
+
+{{ forms.editableTableField({
+    label: "Groups"|t('keyway-sso'),
+    instructions: "Identity provider group to Craft user group handle. No regular expressions: exact, prefix and suffix cover real directory layouts without a pattern that silently matches everything."|t('keyway-sso'),
+    id: 'groupRules',
+    name: 'groupRules',
+    cols: {
+        matchType: { heading: "Match"|t('keyway-sso'), type: 'select', options: {
+            exact: "Exact"|t('keyway-sso'),
+            prefix: "Prefix"|t('keyway-sso'),
+            suffix: "Suffix"|t('keyway-sso'),
+        } },
+        pattern: { heading: "IdP group"|t('keyway-sso'), type: 'singleline', code: true },
+        targetGroup: { heading: "Craft group handle"|t('keyway-sso'), type: 'singleline', code: true },
+    },
+    rows: settings.groupRules,
+    addRowLabel: "Add a group mapping"|t('keyway-sso'),
+    errors: settings.getErrors('groupRules'),
+}) }}
+
+{{ forms.textField({
+    label: "Default group"|t('keyway-sso'),
+    instructions: "Handle of a group everybody signing in joins. Leave empty for none."|t('keyway-sso'),
+    name: 'defaultGroup',
+    value: settings.defaultGroup,
+    errors: settings.getErrors('defaultGroup'),
+}) }}
+
+{{ forms.selectField({
+    label: "Sync mode"|t('keyway-sso'),
+    instructions: "`Append` keeps groups the user already has. `Replace` makes the identity provider the only source of truth."|t('keyway-sso'),
+    name: 'groupSyncMode',
+    options: [
+        { label: "Append"|t('keyway-sso'), value: 'append' },
+        { label: "Replace"|t('keyway-sso'), value: 'replace' },
+    ],
+    value: settings.groupSyncMode,
+    errors: settings.getErrors('groupSyncMode'),
+}) }}
+
+{{ forms.lightswitchField({
+    label: "Case-sensitive matching"|t('keyway-sso'),
+    name: 'groupMatchCaseSensitive',
+    on: settings.groupMatchCaseSensitive,
+}) }}
+
+{{ forms.lightswitchField({
+    label: "Allow admin escalation"|t('keyway-sso'),
+    instructions: "Off by default. With this on, the rules below can make somebody a Craft admin, which means whoever administers your directory can grant admin here."|t('keyway-sso'),
+    name: 'allowAdminEscalation',
+    on: settings.allowAdminEscalation,
+    toggle: 'admin-rules',
+}) }}
+
+<div id="admin-rules" class="{{ settings.allowAdminEscalation ? '' : 'hidden' }}">
+    {{ forms.editableTableField({
+        label: "Admin rules"|t('keyway-sso'),
+        instructions: "Membership in one of these identity provider groups means Craft admin."|t('keyway-sso'),
+        id: 'adminRules',
+        name: 'adminRules',
+        cols: {
+            matchType: { heading: "Match"|t('keyway-sso'), type: 'select', options: {
+                exact: "Exact"|t('keyway-sso'),
+                prefix: "Prefix"|t('keyway-sso'),
+                suffix: "Suffix"|t('keyway-sso'),
+            } },
+            pattern: { heading: "IdP group"|t('keyway-sso'), type: 'singleline', code: true },
+        },
+        rows: settings.adminRules,
+        addRowLabel: "Add an admin rule"|t('keyway-sso'),
+        errors: settings.getErrors('adminRules'),
+    }) }}
+
+    {{ forms.lightswitchField({
+        label: "Revoke admin when no rule matches"|t('keyway-sso'),
+        instructions: "Removes admin status from people who no longer match. Only affects admin granted through these rules."|t('keyway-sso'),
+        name: 'revokeAdminWhenUnmatched',
+        on: settings.revokeAdminWhenUnmatched,
+    }) }}
+</div>
+
+<h2>{{ "Provisioning"|t('keyway-sso') }}</h2>
+
+{{ forms.lightswitchField({
+    label: "Create accounts on first login"|t('keyway-sso'),
+    name: 'allowJit',
+    on: settings.allowJit,
+}) }}
+
+{{ forms.lightswitchField({
+    label: "Update accounts on every login"|t('keyway-sso'),
+    name: 'updateOnLogin',
+    on: settings.updateOnLogin,
+}) }}
+
+{{ forms.selectField({
+    label: "Match existing accounts by"|t('keyway-sso'),
+    name: 'matchBy',
+    options: [
+        { label: "E-mail"|t('keyway-sso'), value: 'email' },
+        { label: "Username"|t('keyway-sso'), value: 'username' },
+    ],
+    value: settings.matchBy,
+    errors: settings.getErrors('matchBy'),
+}) }}
+
+{{ forms.lightswitchField({
+    label: "Link to existing Craft accounts"|t('keyway-sso'),
+    instructions: "Off by default. With this on, an identity from the provider can attach itself to an account that already exists here - convenient for an existing team, and the path an account takeover would use. Fill in the allowed domains below."|t('keyway-sso'),
+    name: 'linkExistingAccounts',
+    on: settings.linkExistingAccounts,
+}) }}
+
+{{ forms.lightswitchField({
+    label: "Linking may include admin accounts"|t('keyway-sso'),
+    instructions: "Separate switch on purpose: \"let the team sign in with SSO\" and \"let the identity provider hand out the owner's account\" are not the same sentence."|t('keyway-sso'),
+    name: 'linkAdminAccounts',
+    on: settings.linkAdminAccounts,
+}) }}
+
+{{ forms.textareaField({
+    label: "Allowed e-mail domains"|t('keyway-sso'),
+    instructions: "One per line. Empty means any domain. `example.com` matches exactly; `.example.com` matches sub-domains only."|t('keyway-sso'),
+    name: 'allowedDomains',
+    value: settings.allowedDomains is iterable ? settings.allowedDomains|join("\n") : settings.allowedDomains,
+    rows: 3,
+    errors: settings.getErrors('allowedDomains'),
+}) }}
+
+{{ forms.lightswitchField({
+    label: "Deny login when no group matches"|t('keyway-sso'),
+    name: 'denyIfNoGroupMatch',
+    on: settings.denyIfNoGroupMatch,
+}) }}
+
+<h2>{{ "Password fallback"|t('keyway-sso') }}</h2>
+
+{# The wording here is load-bearing and was wrong once: it said "Hides password login on the
+   control panel", which the plugin has never done and - because of the anti-lockout guard below -
+   never will. The form stays on screen; the sign-in is refused when it is submitted. A settings
+   screen that describes a behaviour the code does not have is how an administrator builds a
+   recovery plan on something that is not true. #}
+{{ forms.lightswitchField({
+    label: "Single sign-on only"|t('keyway-sso'),
+    instructions: "Refuses password sign-in on the control panel; the password form stays visible and the refusal happens on submit. Front-end logins and passkeys are not affected, and neither is confirming your password while already signed in."|t('keyway-sso'),
+    name: 'ssoOnly',
+    on: settings.ssoOnly,
+}) }}
+
+{{ forms.lightswitchField({
+    label: "Admins may still use a password"|t('keyway-sso'),
+    instructions: "Keep this on unless you have an emergency account below. If turning it off would leave nobody able to get in when the identity provider breaks, it is turned back on when you save."|t('keyway-sso'),
+    name: 'allowPasswordForAdmins',
+    on: settings.allowPasswordForAdmins,
+}) }}
+
+{{ forms.textareaField({
+    label: "Emergency accounts"|t('keyway-sso'),
+    instructions: "E-mail addresses or usernames, one per line, that keep password access while single sign-on only is on. An entry works only if it names an existing account that has a local Craft password - accounts created by single sign-on do not have one. Sign in as the account to prove it works before you turn the switch above off."|t('keyway-sso'),
+    name: 'emergencyAccounts',
+    value: settings.emergencyAccounts is iterable ? settings.emergencyAccounts|join("\n") : settings.emergencyAccounts,
+    rows: 3,
+    errors: settings.getErrors('emergencyAccounts'),
+}) }}
+
+{{ forms.lightswitchField({
+    label: "Emergency password login (break glass)"|t('keyway-sso'),
+    instructions: "Temporarily re-opens password login during an identity provider outage."|t('keyway-sso'),
+    name: 'breakGlassEnabled',
+    on: settings.breakGlassEnabled,
+}) }}
+
+{{ forms.textField({
+    label: "Emergency login expires at"|t('keyway-sso'),
+    instructions: "Unix timestamp. Required when the switch above is on, and at most 24 hours away - a break-glass switch that never closes is a permanent password door."|t('keyway-sso'),
+    name: 'breakGlassExpiresAt',
+    type: 'number',
+    value: settings.breakGlassExpiresAt,
+    errors: settings.getErrors('breakGlassExpiresAt'),
+}) }}
+
+{# The way to the diagnostics screen, and the only one: the plugin registers no navigation item
+   (Plugin::$hasCpSection is false), so without this link the panel exists and nobody finds it.
+   The address comes from Plugin::diagnosticsUrl(), built off the registered route, so a renamed
+   route moves this link too. #}
+<hr>
+
+<h2>{{ "Diagnostics"|t('keyway-sso') }}</h2>
+
+<p>
+    {{ "Every sign-in attempt is recorded - which stage it reached, what the identity provider sent, what it mapped to, and why it was allowed or refused. Read it here before asking anyone to reproduce the problem."|t('keyway-sso') }}
+</p>
+
+<p>
+    <a class="btn" href="{{ diagnosticsUrl }}">{{ "Open sign-in diagnostics"|t('keyway-sso') }}</a>
+</p>

@@ -1,0 +1,332 @@
+{# Keyway SSO diagnostics panel.
+
+   Rendered by Keyway\Sso\controllers\DiagnosticsController::actionIndex(), which has already
+   answered every question worth arguing about: who may look (an administrator, in the control
+   panel), what was asked for (a DiagnosticsQuery, normalised), and what came back. Nothing here
+   filters, sorts or decides - this file turns rows into a table.
+
+   THE ONE RULE THAT CANNOT BE RELAXED HERE: every value on a row arrived from somebody else's
+   identity provider. It is masked (Core\Diagnostics\Masker, at write time) but it is NOT ours,
+   and it is not HTML. There is no `|raw` in this file and there must never be one on a row
+   field - an issuer called `<img onerror=...>` would otherwise be script running in an
+   administrator's control panel session, delivered by whoever can reach the login endpoint.
+   Twig's autoescaping is the whole defence and it only works if nobody switches it off.
+
+   Reason codes are shown RAW, deliberately: `state_consumed` is the string that gets pasted
+   into a support mail, quoted in our documentation and grepped for in the log. A translated
+   label next to it is a courtesy; the code is the identifier. #}
+
+{% requireAdmin false %}
+
+{% extends "_layouts/cp.twig" %}
+
+{% set title = "Single sign-on diagnostics"|t('keyway-sso') %}
+
+{# Labels live in maps rather than in a chain of {% if %}: an unknown value then falls through
+   to itself (`?? row.stage`) instead of rendering as an empty cell. A row written by a newer
+   version of this plugin must still be readable by an older screen. #}
+{% set outcomeLabels = {
+    'success': "Signed in"|t('keyway-sso'),
+    'denied': "Refused"|t('keyway-sso'),
+    'error': "Error"|t('keyway-sso'),
+    'notice': "Notice"|t('keyway-sso'),
+} %}
+
+{# Colour is the SECOND signal, never the only one: each cell also carries the word. #}
+{% set outcomeColours = {
+    'success': 'green',
+    'denied': 'orange',
+    'error': 'red',
+    'notice': 'blue',
+} %}
+
+{% set stageLabels = {
+    'protocol': "Protocol"|t('keyway-sso'),
+    'state': "Login state"|t('keyway-sso'),
+    'attributes': "Attributes"|t('keyway-sso'),
+    'groups': "Groups"|t('keyway-sso'),
+    'provisioning': "Provisioning"|t('keyway-sso'),
+    'session': "Session"|t('keyway-sso'),
+} %}
+
+{% set protocolLabels = {
+    'saml': "SAML 2.0"|t('keyway-sso'),
+    'oidc': "OIDC"|t('keyway-sso'),
+} %}
+
+{% macro value(item, depth) %}
+    {% import _self as ui %}
+    {% if item is iterable %}
+        {% if item is empty %}
+            <span class="light">{{ "(empty)"|t('keyway-sso') }}</span>
+        {% elseif depth > 4 %}
+            {# Masker::scrubStructure already bounds what is stored; this is the second fence,
+               so a hand-written row cannot turn the panel into an infinite loop. #}
+            <span class="light">{{ "(nested too deeply to show)"|t('keyway-sso') }}</span>
+        {% else %}
+            <ul class="keyway-diagnostics-tree">
+                {% for key, child in item %}
+                    <li>
+                        {% if key is not same as(loop.index0) %}<code>{{ key }}</code>: {% endif %}
+                        {{ ui.value(child, depth + 1) }}
+                    </li>
+                {% endfor %}
+            </ul>
+        {% endif %}
+    {% elseif item is same as(true) %}
+        {{ "yes"|t('keyway-sso') }}
+    {% elseif item is same as(false) %}
+        {{ "no"|t('keyway-sso') }}
+    {% elseif item is null %}
+        <span class="light">{{ "(none)"|t('keyway-sso') }}</span>
+    {% elseif item is same as('') %}
+        <span class="light">{{ "(empty)"|t('keyway-sso') }}</span>
+    {% else %}
+        {{ item }}
+    {% endif %}
+{% endmacro %}
+
+{% import _self as ui %}
+
+{% block content %}
+    <div class="readable">
+        <p>
+            {{ "Every sign-in attempt this site handled, newest first. A visitor is never told why a login was refused - the reason is here instead."|t('keyway-sso') }}
+        </p>
+    </div>
+
+    {# The filter form is a plain GET form on purpose: the resulting URL is the whole state of
+       the screen, so an administrator can bookmark it, reload it and paste it into a ticket.
+       Submitting drops the old query string, which is exactly the "apply these filters from
+       scratch" behaviour wanted, including resetting the page.
+
+       AND THAT LAST PROPERTY IS WHY THE HIDDEN FIELD BELOW EXISTS. On a Craft install with the
+       default `omitScriptNameInUrls = false`, the address of this very screen is
+       `/index.php?p=admin/sso/diagnostics` - the path lives in a QUERY PARAMETER. A GET form
+       replaces the whole query string with its own fields, so submitting would drop `p` and
+       land the administrator on the site's home page with `?outcome=denied` attached. The
+       filters would look broken while the "Clear" link, an ordinary <a href>, kept working.
+       `pathField` is null on an install with clean URLs, and a {name, value} pair on one where
+       the path travels in the query string. The decision is made in the controller, not here,
+       for the same reason every other Craft read in this plugin is: a template that asks
+       `craft.app.config.general` cannot be rendered in a test, and this screen's job is to keep
+       working on exactly the installs that are hardest to reproduce. #}
+    <form method="get" action="{{ clearUrl }}" class="keyway-diagnostics-filters">
+        {% if pathField %}
+            <input type="hidden" name="{{ pathField.name }}" value="{{ pathField.value }}">
+        {% endif %}
+        <input type="hidden" name="limit" value="{{ limit }}">
+
+        <div class="flex flex-nowrap">
+            <div class="field">
+                <div class="heading">
+                    <label for="keyway-filter-outcome">{{ "Outcome"|t('keyway-sso') }}</label>
+                </div>
+                <div class="input ltr">
+                    <div class="select">
+                        <select id="keyway-filter-outcome" name="outcome">
+                            <option value="">{{ "All outcomes"|t('keyway-sso') }}</option>
+                            {% for option in outcomeOptions %}
+                                <option value="{{ option }}"{% if outcome == option %} selected{% endif %}>
+                                    {{ outcomeLabels[option] ?? option }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <div class="field">
+                <div class="heading">
+                    <label for="keyway-filter-protocol">{{ "Protocol"|t('keyway-sso') }}</label>
+                </div>
+                <div class="input ltr">
+                    <div class="select">
+                        <select id="keyway-filter-protocol" name="protocol">
+                            <option value="">{{ "All protocols"|t('keyway-sso') }}</option>
+                            {% for option in protocolOptions %}
+                                <option value="{{ option }}"{% if protocol == option %} selected{% endif %}>
+                                    {{ protocolLabels[option] ?? option }}
+                                </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <div class="field">
+                <div class="heading">
+                    <label for="keyway-filter-search">{{ "Search"|t('keyway-sso') }}</label>
+                </div>
+                <div class="input ltr">
+                    <input type="search"
+                           id="keyway-filter-search"
+                           class="text fullwidth"
+                           name="search"
+                           value="{{ search }}"
+                           autocomplete="off"
+                           aria-describedby="keyway-filter-search-instructions">
+                </div>
+                <div class="instructions" id="keyway-filter-search-instructions">
+                    <p>{{ "Matches the reason code, the masked subject, the issuer and the entry ID."|t('keyway-sso') }}</p>
+                </div>
+            </div>
+
+            <div class="field">
+                <div class="heading">&nbsp;</div>
+                <div class="buttons">
+                    <button type="submit" class="btn submit">{{ "Apply"|t('keyway-sso') }}</button>
+                    {% if filtered %}
+                        <a class="btn" href="{{ clearUrl }}">{{ "Clear"|t('keyway-sso') }}</a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </form>
+
+    {% if unavailable %}
+
+        {# State one of three: the reader threw. Almost always a customer who ran
+           `composer update` without `craft up`, so the table the migration creates is not
+           there. The exception itself went to the Craft log - it can name tables and
+           connection details, and this screen is read by people we are trying to keep calm. #}
+        <p class="error with-icon">
+            {{ "The diagnostics entries could not be read. If this plugin was just installed or updated, run the pending database updates (Utilities → Updates, or `php craft up` on the server) and reload this page. The technical reason was written to the Craft log."|t('keyway-sso') }}
+        </p>
+
+    {% elseif rows is empty and not filtered and offset == 0 %}
+
+        {# State two: nothing has been recorded. A fresh install looks exactly like this, and it
+           is not an error - saying so is the difference between "it works, nobody has signed in
+           yet" and a support ticket. #}
+        <p class="zilch">
+            {{ "No sign-in attempts have been recorded yet. Entries appear here as soon as somebody uses the single sign-on button."|t('keyway-sso') }}
+        </p>
+
+    {% elseif rows is empty %}
+
+        {# State three: there are entries, just none in this view. Distinct wording AND a way
+           back - an administrator who lands here after a filter typo should not have to edit
+           the URL. #}
+        <p class="zilch">
+            {{ "No entries match the current filters."|t('keyway-sso') }}
+            <a href="{{ clearUrl }}">{{ "Clear the filters and show the newest entries."|t('keyway-sso') }}</a>
+        </p>
+
+    {% else %}
+
+        <div class="tablepane">
+            <table class="data fullwidth keyway-diagnostics">
+                <caption class="visually-hidden">
+                    {{ "Single sign-on attempts, newest first. Each row can be expanded for the attributes that arrived, what they mapped to, and what was decided."|t('keyway-sso') }}
+                </caption>
+                <thead>
+                    <tr>
+                        <th scope="col">{{ "Time"|t('keyway-sso') }}</th>
+                        <th scope="col">{{ "Outcome"|t('keyway-sso') }}</th>
+                        <th scope="col">{{ "Protocol"|t('keyway-sso') }}</th>
+                        <th scope="col">{{ "Stage"|t('keyway-sso') }}</th>
+                        <th scope="col">{{ "Reason"|t('keyway-sso') }}</th>
+                        <th scope="col">{{ "Subject"|t('keyway-sso') }}</th>
+                        <th scope="col">{{ "Issuer"|t('keyway-sso') }}</th>
+                    </tr>
+                </thead>
+
+                {# One <tbody> per entry, holding the summary row and its detail row. That is
+                   what groups them for a screen reader, and it keeps the details full width
+                   without any JavaScript: <details> is a native disclosure widget, focusable
+                   and operable from the keyboard on its own. #}
+                {% for row in rows %}
+                    <tbody>
+                        <tr>
+                            <td class="nowrap">{{ row.timestamp|datetime('short') }}</td>
+                            <td class="nowrap">
+                                <span class="status {{ outcomeColours[row.outcome] ?? 'light' }}" aria-hidden="true"></span>
+                                {{ outcomeLabels[row.outcome] ?? row.outcome }}
+                            </td>
+                            <td class="nowrap">{{ protocolLabels[row.protocol] ?? row.protocol }}</td>
+                            <td class="nowrap">{{ stageLabels[row.stage] ?? row.stage }}</td>
+                            <td>
+                                {# Raw code first: it is the identifier support asks for. The
+                                   translated label only appears when a translation exists -
+                                   printing the same string twice would be noise. #}
+                                <code>{{ row.reasonCode }}</code>
+                                {% set reasonLabel = row.reasonCode|t('keyway-sso') %}
+                                {% if reasonLabel != row.reasonCode %}
+                                    <span class="light">{{ reasonLabel }}</span>
+                                {% endif %}
+                            </td>
+                            <td class="code">{{ row.subject }}</td>
+                            <td class="code">{{ row.issuer }}</td>
+                        </tr>
+                        <tr>
+                            <td colspan="7">
+                                <details class="keyway-diagnostics-detail">
+                                    <summary>
+                                        {{ "Details"|t('keyway-sso') }}
+                                        <span class="visually-hidden">
+                                            {{ "for the attempt at"|t('keyway-sso') }}
+                                            {{ row.timestamp|datetime('short') }}
+                                        </span>
+                                    </summary>
+
+                                    <div class="readable">
+                                        <p>{{ row.message }}</p>
+                                    </div>
+
+                                    <h3>{{ "Attributes received"|t('keyway-sso') }}</h3>
+                                    {% if row.attributes() is empty %}
+                                        <p class="light">{{ "Nothing arrived, or the attempt failed before attributes were read."|t('keyway-sso') }}</p>
+                                    {% else %}
+                                        <dl class="keyway-diagnostics-pairs">
+                                            {% for name, values in row.attributes() %}
+                                                <dt><code>{{ name }}</code></dt>
+                                                <dd>{{ ui.value(values, 0) }}</dd>
+                                            {% endfor %}
+                                        </dl>
+                                    {% endif %}
+
+                                    <h3>{{ "Mapped to"|t('keyway-sso') }}</h3>
+                                    {% if row.mapping() is empty %}
+                                        <p class="light">{{ "Nothing was mapped."|t('keyway-sso') }}</p>
+                                    {% else %}
+                                        {{ ui.value(row.mapping(), 0) }}
+                                    {% endif %}
+
+                                    <h3>{{ "Decision"|t('keyway-sso') }}</h3>
+                                    {% if row.decision() is empty %}
+                                        <p class="light">{{ "The attempt ended before a decision was made."|t('keyway-sso') }}</p>
+                                    {% else %}
+                                        {{ ui.value(row.decision(), 0) }}
+                                    {% endif %}
+
+                                    <p class="light">
+                                        {{ "Entry ID"|t('keyway-sso') }}: <code>{{ row.id }}</code>
+                                    </p>
+                                </details>
+                            </td>
+                        </tr>
+                    </tbody>
+                {% endfor %}
+            </table>
+        </div>
+
+        <nav class="keyway-diagnostics-pager" aria-label="{{ 'Diagnostics pages'|t('keyway-sso') }}">
+            <p class="light">
+                {{ "Showing {first}-{last} of {total}"|t('keyway-sso', {
+                    first: offset + 1,
+                    last: offset + rows|length,
+                    total: total,
+                }) }}
+            </p>
+
+            {% if previousUrl %}
+                <a class="btn" href="{{ previousUrl }}" rel="prev">{{ "Newer"|t('keyway-sso') }}</a>
+            {% endif %}
+            {% if nextUrl %}
+                <a class="btn" href="{{ nextUrl }}" rel="next">{{ "Older"|t('keyway-sso') }}</a>
+            {% endif %}
+        </nav>
+
+    {% endif %}
+{% endblock %}

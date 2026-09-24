@@ -1,0 +1,52 @@
+{
+    "name": "aphexcoding/keyway-sso",
+    "description": "SAML 2.0 and OIDC single sign-on for the Craft CMS control panel: group mapping, JIT provisioning and a diagnostics panel.",
+    "type": "craft-plugin",
+    "license": "proprietary",
+    "keywords": ["craft", "craftcms", "craft-plugin", "sso", "saml", "oidc", "okta", "entra", "keycloak"],
+    "require": {
+        "php": "^8.2",
+        "ext-dom": "*",
+        "ext-mbstring": "*",
+        "ext-openssl": "*",
+        "ext-zlib": "*",
+        "craftcms/cms": "^5.0.0",
+        "onelogin/php-saml": "^4.3.2",
+        "league/oauth2-client": "^2.9",
+        "firebase/php-jwt": "^7.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "Keyway\\Sso\\": "src/"
+        }
+    },
+    "scripts": {
+        "test": "php bin/test.php"
+    },
+    "extra": {
+        "handle": "keyway-sso",
+        "name": "Keyway SSO",
+        "developer": "Aphex Coding",
+        "class": "Keyway\\Sso\\Plugin",
+        "hasCpSettings": true,
+        "hasCpSection": false
+    },
+    "archive": {
+        "exclude": [
+            "/test",
+            "/bin",
+            "/vendor",
+            "/NOTES.md",
+            "/composer.lock",
+            "/.gitattributes",
+            "/.gitignore"
+        ]
+    },
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "yiisoft/yii2-composer": true,
+            "craftcms/plugin-installer": true
+        }
+    }
+}

@@ -1,0 +1,4 @@
+# Composer dependencies: reproducible from composer.lock, and large enough that committing
+# them would dwarf the plugin itself. Run `composer install` before the test suite; the
+# suite reports the cases it has to skip when this directory is absent.
+/vendor/
