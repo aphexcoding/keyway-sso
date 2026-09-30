@@ -425,9 +425,12 @@ final class SettingsTranslator
      * configuration it just corrected is a guard that locks you out.
      *
      * @param array<string, mixed> $settings
+     * @param bool $craftKeepsUserGroups Whether this installation's Craft edition stores user
+     *     group memberships at all - false below Craft Pro. A fact about the CMS, passed in
+     *     because nothing in this namespace is allowed to ask Craft anything.
      * @return list<string>
      */
-    public static function warnings(array $settings, int $now): array
+    public static function warnings(array $settings, int $now, bool $craftKeepsUserGroups = true): array
     {
         $warnings = [];
         $fallback = self::adminFallback($settings);
@@ -474,6 +477,46 @@ final class SettingsTranslator
                 : 'The redirect URI is not HTTPS. The login is still tied to the browser that '
                     . 'started it, but the binding cookie and the authorization code travel in '
                     . 'the clear. Serve the site over HTTPS.';
+        }
+
+        // THE EDITION WARNING, AND IT IS DELIBERATELY NARROW. Craft shows its own alert when an
+        // installation is below `minCmsEdition`, but that alert is generic and, more to the
+        // point, nothing stops the plugin being installed anyway. This one fires only when the
+        // configuration actually asks for something the edition cannot do: a rule naming a Craft
+        // group, or a default group. Admin rules and "refuse a sign-in that matches no group"
+        // are NOT included, because both are decided from provider groups against the mapping on
+        // this screen and work perfectly on an edition with no user groups - warning about them
+        // would teach an administrator to distrust a feature that is doing its job.
+        if (!$craftKeepsUserGroups) {
+            $targets = [];
+
+            foreach (self::rows($settings['groupRules'] ?? []) as $row) {
+                $target = self::str($row, 'targetGroup');
+
+                if ($target !== '') {
+                    $targets[$target] = true;
+                }
+            }
+
+            $default = self::nullableStr($settings, 'defaultGroup');
+
+            if ($default !== null && $default !== '') {
+                $targets[$default] = true;
+            }
+
+            if ($targets !== []) {
+                $warnings[] = sprintf(
+                    'This Craft edition has no user groups, so the group(s) named below - %s - '
+                    . 'cannot be assigned; putting an account in a group needs Craft Pro. Each '
+                    . 'login leaves group membership untouched rather than clearing it. '
+                    . 'Everything else keeps working, including attribute mapping, the admin '
+                    . 'rules and refusing a sign-in that matches no group.',
+                    implode(', ', array_map(
+                        static fn (string $handle): string => '"' . $handle . '"',
+                        array_keys($targets)
+                    ))
+                );
+            }
         }
 
         if (self::bool($settings, 'allowAdminEscalation', false)) {

@@ -11,8 +11,14 @@ screen inside the control panel.
 | What | Version |
 |---|---|
 | PHP | 8.2 or newer |
-| Craft CMS | 5.0 or newer |
+| Craft CMS | 5.0 or newer, **Team edition or higher** (one feature needs Pro - see below) |
 | PHP extensions | `dom`, `mbstring`, `openssl`, `zlib` |
+
+Craft Solo holds one user account, so just-in-time provisioning has nowhere to provision. From
+Team upwards everything works except **assigning Craft user groups**, which Craft itself only has
+from Pro upwards — on Team, sign-in, just-in-time accounts, attribute mapping, "refuse a sign-in
+that matches no group" and the administrator rules all work, while rules that name a Craft group
+do nothing and say so. Details: [`docs/README.md`](docs/README.md).
 
 ## Installation
 

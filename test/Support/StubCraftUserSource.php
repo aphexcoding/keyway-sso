@@ -22,6 +22,18 @@ final class StubCraftUserSource extends Users
     /** @var list<int> */
     public array $asked = [];
 
+    /**
+     * Every group write this login caused, in order, as `[userId, groupIds]`.
+     *
+     * Recorded rather than executed because the real call replaces the whole set: the thing
+     * worth asserting is not what it returned but WHETHER IT HAPPENED AT ALL. An edition below
+     * Craft Pro must produce no entry here - an empty write on such a site strips the group
+     * Craft itself just assigned.
+     *
+     * @var list<array{0: int, 1: list<int>}>
+     */
+    public array $groupWrites = [];
+
     public function __construct()
     {
         // Deliberately does not call parent::__construct(): no application, no database.
@@ -32,5 +44,15 @@ final class StubCraftUserSource extends Users
         $this->asked[] = $userId;
 
         return $this->user;
+    }
+
+    /**
+     * @param list<int>|array<int, int> $groupIds
+     */
+    public function assignUserToGroups(int $userId, array $groupIds): bool
+    {
+        $this->groupWrites[] = [$userId, array_values(array_map('intval', $groupIds))];
+
+        return true;
     }
 }

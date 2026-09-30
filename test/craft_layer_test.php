@@ -84,6 +84,31 @@ $cases = [
         Assert::same('1.1.0', $defaults['schemaVersion']);
     },
 
+    // A one-word property nobody looks at again, and the one a buyer is judged by. Craft's
+    // default is `Solo`, where `Users::getMaxUsers()` allows ONE account - single sign-on with
+    // nowhere to provision. `Team` is the floor that was measured to work: sign-in, just-in-time
+    // accounts, attribute mapping, the refuse-unless-mapped rule and the admin rule all run
+    // there. It is deliberately NOT `Pro`, even though writing Craft group memberships needs
+    // Pro: overstating the requirement turns away buyers for whom everything but one feature
+    // works, and that one feature degrades loudly (see the guard in CraftSignIn and the settings
+    // warning). Pinned because the value can only be corrected by tagging a NEW release - an
+    // accidental change is not a listing edit, it is a re-release.
+    'the plugin declares the Craft edition it was measured to need' => static function (): void {
+        $defaults = (new ReflectionClass(Plugin::class))->getDefaultProperties();
+
+        $edition = $defaults['minCmsEdition'];
+
+        // By NAME, not by comparing the two enum cases: Assert::same reports objects as their
+        // class, so a mismatch there prints "expected craft\enums\CmsEdition, got
+        // craft\enums\CmsEdition" - a red test that names neither the wrong value nor the right
+        // one. This says "expected 'Team', got 'Solo'".
+        Assert::same('Team', $edition->name);
+        Assert::true(
+            $edition->value > \craft\enums\CmsEdition::Solo->value,
+            'never falls back to the one-account edition, where provisioning cannot work'
+        );
+    },
+
     'the settings hooks are overridden with the signatures Craft calls' => static function (): void {
         foreach (['createSettingsModel', 'settingsHtml'] as $name) {
             $method = new ReflectionMethod(Plugin::class, $name);

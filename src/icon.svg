@@ -1,0 +1,16 @@
+<!-- Keyway SSO plugin icon: a keyway - the profiled slot a key turns in - cut out of one solid
+     badge, in the accent blue of keyway.aphexcoding.tech. Craft wants a square SVG named icon.svg
+     in the plugin's source directory, and strips comments, <title> and <desc> from it before
+     drawing it in the control panel - so this note is for whoever redraws the file, not for the
+     browser, and accessible text placed inside the file would not survive. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">
+  <defs>
+    <linearGradient id="keyway-badge" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0052cc"/>
+      <stop offset="1" stop-color="#0747a6"/>
+    </linearGradient>
+  </defs>
+  <rect x="2" y="2" width="44" height="44" rx="10" fill="url(#keyway-badge)"/>
+  <circle cx="24" cy="18" r="8" fill="#ffffff"/>
+  <path d="M19.8 24.6 H28.2 L29.4 35.4 A1.8 1.8 0 0 1 27.6 37.4 H20.4 A1.8 1.8 0 0 1 18.6 35.4 Z" fill="#ffffff"/>
+</svg>

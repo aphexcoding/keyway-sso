@@ -9,6 +9,7 @@ use craft\base\Model;
 use craft\base\Plugin as BasePlugin;
 use craft\controllers\UsersController;
 use craft\elements\User;
+use craft\enums\CmsEdition;
 use craft\events\AuthenticateUserEvent;
 use craft\events\LoginFailureEvent;
 use craft\events\RegisterUrlRulesEvent;
@@ -87,6 +88,45 @@ class Plugin extends BasePlugin
      * that already exist.
      */
     public string $schemaVersion = '1.1.0';
+
+    /**
+     * Craft Team: Solo cannot hold the accounts this plugin creates - and NOT Pro, even though
+     * one feature of the plugin does need Pro.
+     *
+     * Measured in Craft 5 rather than assumed, because the default of this property is `Solo`
+     * and a plugin that provisions accounts must not inherit it. Method names below, deliberately
+     * without line numbers: they are somebody else's file, shipped to customers who upgrade Craft
+     * on their own schedule, and a stale line number reads as a lie.
+     *
+     *  - SOLO IS OUT. `Users::getMaxUsers()` allows one account on Solo and `User::beforeSave()`
+     *    refuses to create another past that ceiling, so just-in-time provisioning has nowhere to
+     *    provision. Single sign-on for a single account is not a product.
+     *  - TEAM WORKS, checked feature by feature rather than inferred from the one limit below.
+     *    Sign-in, just-in-time accounts (up to Team's five), attribute mapping, the
+     *    refuse-unless-mapped rule and the admin rule all run there. The refusal rule compares
+     *    PROVIDER groups against the mapping configured on our own settings screen and never
+     *    touches Craft's group table; admin is a plain column on the user that Craft gates on no
+     *    edition at all. Team additionally answers `accessCp` for every account
+     *    (`UserPermissions::doesUserHavePermission()`) and puts each saved account into its single
+     *    built-in group (`User::afterSave()`).
+     *  - ONE FEATURE NEEDS PRO: writing Craft group memberships. Below Pro there is nothing to map
+     *    provider groups ONTO - `UserGroups::saveGroup()` refuses every group but the one built-in
+     *    Team group, `UserGroups::getAllGroups()` returns that one (none on Solo), and on the
+     *    account itself `User::getGroups()` returns `[]` while `isInGroup()` answers false.
+     *    CraftSignIn is told about this and leaves membership untouched rather than writing an
+     *    empty set, and the settings screen says so when a mapping is configured.
+     *
+     * Declaring `Pro` here would overstate the requirement and turn away buyers for whom
+     * everything but one feature works. `Team` states the real floor; the degradation is said
+     * next to the feature, which is where somebody will actually read it.
+     *
+     * WHAT THIS VALUE ACTUALLY DOES, since it is easy to over-read: Craft turns it into a
+     * control-panel alert - "Keyway SSO requires Craft CMS Team edition" (`craft\helpers\Cp`) -
+     * and nothing else. It does not block installation, which is exactly why the plugin raises
+     * its own, narrower warning about group mapping. It has to be right BEFORE a release is
+     * tagged: afterwards it can only be changed by tagging another one.
+     */
+    public CmsEdition $minCmsEdition = CmsEdition::Team;
 
     /**
      * The one place Craft's control-panel login screen lets anything else in
@@ -391,7 +431,7 @@ class Plugin extends BasePlugin
                 'plugin' => $this,
                 'settings' => $settings,
                 'protocolOptions' => self::protocolOptions(),
-                'warnings' => $settings->warnings(),
+                'warnings' => $settings->warnings(self::craftKeepsUserGroups()),
                 'ready' => $settings->isReadyToSignIn(),
                 'acsUrl' => $acsUrl,
                 'acsMatch' => EndpointMatch::compare($acsUrl, $settings->samlAcsUrl, $installBaseUrls),
@@ -703,11 +743,30 @@ class Plugin extends BasePlugin
                 Craft::$app->getUserGroups(),
                 Craft::$app->getElements(),
                 Craft::$app->getConfig()->getGeneral()->userSessionDuration,
-                Craft::$app->getIsLive()
+                Craft::$app->getIsLive(),
+                // Whether this edition stores group memberships at all. Read here, where the
+                // application may be read, and handed over as a fact - CraftSignIn has no way to
+                // ask, and must not grow one.
+                self::craftKeepsUserGroups()
             );
         }
 
         return $this->signIn;
+    }
+
+    /**
+     * Whether this installation's Craft edition stores user group memberships at all.
+     *
+     * False below Craft Pro, where `UserGroups::saveGroup()` refuses to create any group but the
+     * single built-in one and `User::getGroups()` answers `[]` regardless of what the account is
+     * in. ONE method with TWO callers on purpose: the sign-in path, which must not write an empty
+     * group set on such an edition, and the settings screen, which has to warn about exactly the
+     * same situation. Two copies of this condition would be two chances to warn about something
+     * the login does not actually do.
+     */
+    private static function craftKeepsUserGroups(): bool
+    {
+        return Craft::$app->edition->value >= CmsEdition::Pro->value;
     }
 
     /**

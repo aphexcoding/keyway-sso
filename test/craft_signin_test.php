@@ -15,6 +15,7 @@ use Keyway\Sso\Test\Support\PermissionedCraftUser;
 use Keyway\Sso\Test\Support\StubCraftApplication;
 use Keyway\Sso\Test\Support\StubCraftElements;
 use Keyway\Sso\Test\Support\StubCraftSession;
+use Keyway\Sso\Test\Support\StubCraftUserGroups;
 use Keyway\Sso\Test\Support\StubCraftUserSource;
 
 /**
@@ -153,10 +154,69 @@ $create = static function (
             $elements,
             KEYWAY_TEST_SESSION_DURATION,
             true,
-            static fn (): \craft\elements\User => $user
+            // Named, because the constructor grew `$craftKeepsUserGroups` between the two: the
+            // element seam stays last, and a positional call here would have silently handed a
+            // closure to a bool.
+            newUser: static fn (): \craft\elements\User => $user
         );
 
         return [$signIn->signIn($jitCreate($attributes)), $elements, $user];
+    } finally {
+        $app->restore();
+    }
+};
+
+/**
+ * Runs an UPDATE login whose mapping asks for one Craft group, on an installation whose edition
+ * either keeps group memberships or does not.
+ *
+ * Update rather than SignInOnly because applyGroups() is only reached on a decision that writes,
+ * and the group write is the whole subject here.
+ *
+ * @return array{0: SignInResult, 1: StubCraftUserSource, 2: StubCraftUserGroups}
+ */
+$loginMappingOneGroup = static function (bool $craftKeepsUserGroups, array $siteGroups): array {
+    $app = StubCraftApplication::install(true);
+
+    try {
+        $users = new StubCraftUserSource();
+        // A username as well as the e-mail: StubCraftElements copies Craft's real "username
+        // cannot be blank" rule, and this case is about groups, not about that rule.
+        $users->user = PermissionedCraftUser::with(['accessCp'], ['username' => 'person']);
+
+        $groups = new StubCraftUserGroups($siteGroups);
+
+        $signIn = new CraftSignIn(
+            new StubCraftSession(),
+            $users,
+            $groups,
+            new StubCraftElements(),
+            KEYWAY_TEST_SESSION_DURATION,
+            true,
+            $craftKeepsUserGroups
+        );
+
+        $decision = new ProvisioningDecision(
+            ProvisioningAction::Update,
+            ProvisioningDecision::UPDATE_ON_LOGIN,
+            'The account matched and the mapped values are written on every login.',
+            new MappedAttributes([]),
+            new GroupAssignment(
+                ['editors'],
+                ['idp-editors'],
+                [],
+                false,
+                false,
+                false,
+                false,
+                GroupSyncMode::Append
+            ),
+            UserMatchKey::Email,
+            'person@example.test',
+            '41'
+        );
+
+        return [$signIn->signIn($decision), $users, $groups];
     } finally {
         $app->restore();
     }
@@ -356,4 +416,32 @@ return [
                 'on this install the column is Craft\'s decision, not the mapping\'s'
             );
         },
+    // WHAT THIS GUARDS IS A DESTRUCTIVE NO-OP, not a missing feature. Below Craft Pro the CMS
+    // answers `getGroups()` with `[]` whatever the account is really in, and no handle resolves,
+    // so the straightforward code path hands `assignUserToGroups()` an EMPTY set - a call that
+    // replaces the whole set and would therefore strip the built-in group Craft assigns while
+    // saving the account, on every login. Without the guard this case records one write of `[]`.
+    'below Craft Pro a mapped group is reported, and membership is not touched' => static function () use ($loginMappingOneGroup): void {
+        [$result, $users, $groups] = $loginMappingOneGroup(false, []);
+
+        Assert::true($result->ok, 'the login still succeeds - this degrades one feature, not sign-in');
+        Assert::sameList([], $users->groupWrites, 'no group write at all, not even an empty one');
+        Assert::sameList([], $groups->asked, 'and no lookup either: there is nothing to look up');
+
+        $notes = implode(' | ', $result->notes());
+        Assert::contains('editors', $notes, 'the handle that was asked for is named');
+        Assert::contains('Craft Pro', $notes, 'and so is what it would take to honour it');
+    },
+
+    // The control that makes the case above mean something: same decision, same stubs, only the
+    // edition fact flipped. If the guard ever widened to "never write groups", this goes red.
+    'on an edition that keeps groups the same decision writes the membership' => static function () use ($loginMappingOneGroup): void {
+        [$result, $users, $groups] = $loginMappingOneGroup(true, ['editors' => 9]);
+
+        Assert::true($result->ok);
+        Assert::sameList(['editors'], $groups->asked);
+        Assert::same(1, count($users->groupWrites), 'exactly one write');
+        Assert::sameList([9], $users->groupWrites[0][1]);
+        Assert::sameList([], $result->notes(), 'nothing to explain when it simply worked');
+    },
 ];

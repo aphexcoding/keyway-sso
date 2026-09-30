@@ -82,11 +82,16 @@ final class CraftSignIn
     private Elements $elements;
     private int $sessionDuration;
     private bool $systemIsLive;
+    private bool $craftKeepsUserGroups;
 
     /** @var callable(): User Builds the element a JIT creation writes into. */
     private $newUser;
 
     /**
+     * @param bool $craftKeepsUserGroups Whether this installation's Craft edition stores user
+     *     group memberships at all - false below Craft Pro. Passed in, like `$systemIsLive`,
+     *     rather than read from the application, so that the branch it controls is reachable in
+     *     a test.
      * @param (callable(): User)|null $newUser Defaults to `new User()`; see the docblock above
      *     for why the creation path needs a seam at all.
      */
@@ -97,6 +102,7 @@ final class CraftSignIn
         Elements $elements,
         int $sessionDuration,
         bool $systemIsLive = true,
+        bool $craftKeepsUserGroups = true,
         ?callable $newUser = null
     ) {
         $this->session = $session;
@@ -105,6 +111,7 @@ final class CraftSignIn
         $this->elements = $elements;
         $this->sessionDuration = $sessionDuration;
         $this->systemIsLive = $systemIsLive;
+        $this->craftKeepsUserGroups = $craftKeepsUserGroups;
         $this->newUser = $newUser ?? static fn (): User => new User();
     }
 
@@ -336,6 +343,31 @@ final class CraftSignIn
     private function applyGroups(User $user, ProvisioningDecision $decision): array
     {
         $assignment = $decision->groups();
+
+        // BELOW CRAFT PRO, TOUCHING NOTHING IS THE ONLY SAFE MOVE, and doing the obvious thing
+        // is actively destructive. Such an edition answers `getGroups()` with `[]` whatever the
+        // account is really in, so the sync below would conclude "belongs to nothing", find no
+        // handle it could resolve, and hand `assignUserToGroups()` an EMPTY set - a call that
+        // replaces the whole set. That would strip the built-in group Craft itself had just put
+        // the account into while saving it, on every single login. And there is nothing to gain
+        // in exchange: the edition cannot even hold the groups a mapping names, because
+        // `UserGroups::saveGroup()` refuses to create them.
+        if (!$this->craftKeepsUserGroups) {
+            if ($assignment->groups() === []) {
+                return [];
+            }
+
+            return [sprintf(
+                'Group mapping asked for user group(s) %s, but this Craft edition does not keep '
+                . 'user group memberships - that needs Craft Pro. Group membership was left '
+                . 'untouched. Sign-in, attribute mapping, the refuse-unless-mapped rule and the '
+                . 'admin rule are unaffected.',
+                implode(', ', array_map(
+                    static fn (string $handle): string => '"' . $handle . '"',
+                    $assignment->groups()
+                ))
+            )];
+        }
 
         $existing = array_values(array_map(
             static fn ($group): string => (string)$group->handle,

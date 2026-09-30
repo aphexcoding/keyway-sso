@@ -3,7 +3,7 @@
     "description": "SAML 2.0 and OIDC single sign-on for the Craft CMS control panel: group mapping, JIT provisioning and a diagnostics panel.",
     "type": "craft-plugin",
     "license": "proprietary",
-    "keywords": ["craft", "craftcms", "craft-plugin", "sso", "saml", "oidc", "okta", "entra", "keycloak"],
+    "keywords": ["craft", "craftcms", "craft-plugin", "sso", "single sign on", "saml", "saml2", "service provider", "oidc", "openid connect", "okta", "keycloak", "entra id", "azure ad", "group mapping", "attribute mapping"],
     "require": {
         "php": "^8.2",
         "ext-dom": "*",
@@ -27,6 +27,7 @@
         "handle": "keyway-sso",
         "name": "Keyway SSO",
         "developer": "Aphex Coding",
+        "documentationUrl": "https://keyway.aphexcoding.tech/",
         "class": "Keyway\\Sso\\Plugin",
         "hasCpSettings": true,
         "hasCpSection": false

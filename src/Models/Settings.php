@@ -354,9 +354,12 @@ class Settings extends Model
     }
 
     /**
+     * @param bool $craftKeepsUserGroups Whether this installation's Craft edition stores user
+     *     group memberships - false below Craft Pro. Handed in by Plugin, the one class allowed
+     *     to ask the application, so that this model stays testable without a booted Craft.
      * @return list<string>
      */
-    public function warnings(): array
+    public function warnings(bool $craftKeepsUserGroups = true): array
     {
         $warnings = [];
 
@@ -377,7 +380,11 @@ class Settings extends Model
 
         return array_merge(
             $warnings,
-            SettingsTranslator::warnings($this->resolvedAttributes(), (new SystemClock())->now())
+            SettingsTranslator::warnings(
+                $this->resolvedAttributes(),
+                (new SystemClock())->now(),
+                $craftKeepsUserGroups
+            )
         );
     }
 }

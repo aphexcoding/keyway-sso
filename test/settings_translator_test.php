@@ -417,6 +417,45 @@ $cases = [
         Assert::same(2, count($warnings));
     },
 
+    // The plugin's own edition warning. It exists because Craft's alert for `minCmsEdition`
+    // does not block installation, so a site below Pro can be sitting there with group rules
+    // that quietly assign nothing.
+    'below Craft Pro, a mapping that names a Craft group is warned about' => static function () use ($now): void {
+        $warnings = SettingsTranslator::warnings([
+            'groupRules' => [
+                ['matchType' => 'exact', 'pattern' => 'idp-editors', 'targetGroup' => 'editors'],
+            ],
+            'defaultGroup' => 'staff',
+        ], $now, false);
+
+        Assert::same(1, count($warnings));
+        Assert::contains('"editors"', $warnings[0], 'the mapped handle is named');
+        Assert::contains('"staff"', $warnings[0], 'and so is the default group');
+        Assert::contains('Craft Pro', $warnings[0]);
+    },
+
+    // THE NARROWNESS IS THE FEATURE, and this is the case that pins it. Both of these work
+    // perfectly on an edition with no user groups - the refusal compares PROVIDER groups against
+    // the mapping on this screen, and admin is a column on the user - so warning about them
+    // would teach an administrator to distrust a feature that is doing its job.
+    'the edition warning ignores admin rules and deny-if-no-match, which work without groups'
+        => static function () use ($now): void {
+            Assert::same([], SettingsTranslator::warnings([
+                'denyIfNoGroupMatch' => true,
+                'adminRules' => [['matchType' => 'exact', 'pattern' => 'idp-admins']],
+                // A rule with no target group names nothing to assign.
+                'groupRules' => [['matchType' => 'exact', 'pattern' => 'idp-editors', 'targetGroup' => '']],
+            ], $now, false));
+        },
+
+    'on an edition that keeps groups the same mapping is silent' => static function () use ($now): void {
+        Assert::same([], SettingsTranslator::warnings([
+            'groupRules' => [
+                ['matchType' => 'exact', 'pattern' => 'idp-editors', 'targetGroup' => 'editors'],
+            ],
+        ], $now, true));
+    },
+
     'a complete SAML connection builds' => static function () use ($saml, $cert): void {
         $connection = SettingsTranslator::samlConnection($saml);
 

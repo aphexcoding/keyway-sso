@@ -15,12 +15,30 @@ from its settings screen, so the field names quoted here are the ones you will a
 | What | Version |
 |---|---|
 | PHP | 8.2 or newer |
-| Craft CMS | 5.0 or newer |
+| Craft CMS | 5.0 or newer, **Team edition or higher** (one feature needs Pro - see below) |
 | PHP extensions | `dom`, `mbstring`, `openssl`, `zlib` |
 
 `zlib` is not optional and is declared as a requirement, so Composer refuses to install the plugin
 without it: the SAML authentication request is DEFLATE-encoded before it is sent, and the SAML
 logout messages are encoded and read back the same way.
+
+**Why Team is the floor, and what exactly needs Pro.** Craft Solo allows a single user account,
+so just-in-time provisioning has nowhere to provision — the plugin is not useful there. From Team
+upwards everything works **except one thing: assigning Craft user groups.** Craft only has user
+groups from Pro upwards (below it a site has a single built-in group at most, and Craft reports
+every account as belonging to no group), so on Team:
+
+* single sign-on, just-in-time accounts (up to Team's five), attribute mapping, **"refuse a
+  sign-in that matches no group"** and the **administrator rules** all work — the refusal and the
+  admin rules are decided from the groups your provider sends, compared against the mapping on
+  the settings screen, and never read Craft's own group table;
+* **rules that put an account in a Craft user group do nothing**, and neither does a default
+  group. The plugin leaves group membership untouched at every login rather than clearing it, and
+  says so on the settings screen and in the diagnostics note for that login.
+
+On a site below Team, Craft shows its own alert — *"Keyway SSO requires Craft CMS Team edition"* —
+in the control panel. That alert does not block installation, which is why the plugin raises the
+narrower warning above about group mapping.
 
 ---
 
