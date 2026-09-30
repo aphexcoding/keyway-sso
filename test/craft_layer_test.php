@@ -268,7 +268,10 @@ $cases = [
         $warnings = implode(' ', $settings->warnings());
 
         Assert::contains('KEYWAY_TEST_MISSING_SECRET', $warnings);
-        Assert::contains('oidcClientSecret', $warnings);
+        // The field as the SCREEN names it. `oidcClientSecret` is a property name; nobody
+        // looking at the settings page can find a field called that.
+        Assert::contains('"Client secret" field', $warnings);
+        Assert::notContains('oidcClientSecret', $warnings);
     },
 
     // The variant that reads as "configured" everywhere else: the variable exists in the
@@ -284,7 +287,8 @@ $cases = [
             $warnings = implode(' ', $settings->warnings());
 
             Assert::contains('KEYWAY_TEST_EMPTY_KEY', $warnings);
-            Assert::contains('samlSpPrivateKey', $warnings);
+            Assert::contains('"SP private key" field', $warnings);
+            Assert::notContains('samlSpPrivateKey', $warnings);
             Assert::false($settings->isReadyToSignIn());
         } finally {
             unset($_SERVER['KEYWAY_TEST_EMPTY_KEY']);

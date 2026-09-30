@@ -68,6 +68,46 @@ final class DiagnosticsRecorder
     }
 
     /**
+     * Records that a session was actually started: the last row of a login that worked.
+     *
+     * recordDecision() is written when the provisioning policy ACCEPTS a login, which is before
+     * the account is saved and before Craft starts a session - and either of those can still
+     * fail (`user_not_saved`, `no_cp_access`). A panel whose only green row is the decision
+     * therefore shows "success" next to the red row that says the person never got in. This is
+     * the row that means what it says, and it is written only after the sign-in returned.
+     *
+     * `$issuer` and `$subject` so the row is found by the same search as the rest of the
+     * attempt; the subject is masked by DiagnosticEvent like every other.
+     */
+    public function recordSignedIn(
+        string $protocol,
+        string $reasonCode,
+        string $message,
+        string $issuer = '',
+        string $subject = '',
+        ?int $userId = null
+    ): DiagnosticEvent {
+        $event = new DiagnosticEvent(
+            $this->nextId(),
+            $this->clock->now(),
+            $protocol,
+            DiagnosticEvent::STAGE_SESSION,
+            LoginOutcome::Success,
+            $reasonCode,
+            $message,
+            $issuer,
+            $subject,
+            [],
+            [],
+            ['userId' => $userId]
+        );
+
+        $this->sink->record($event);
+
+        return $event;
+    }
+
+    /**
      * Records a failure before a decision could be made: bad signature, bad state, missing
      * required claim. `$payload` is optional because the earliest failures happen before there
      * is anything to show.
@@ -77,8 +117,14 @@ final class DiagnosticsRecorder
         string $stage,
         string $reasonCode,
         string $message,
-        ?IdentityPayload $payload = null
+        ?IdentityPayload $payload = null,
+        string $issuer = '',
+        string $subject = ''
     ): DiagnosticEvent {
+        // `$issuer`/`$subject` are for the one caller that has no payload but does know whose
+        // attempt it was: the session stage, after the decision. Without them its red row
+        // (`no_cp_access`, `user_not_saved`) is the only row of the attempt a search by subject
+        // does not find - and it is the row that says the person never got in.
         $event = new DiagnosticEvent(
             $this->nextId(),
             $this->clock->now(),
@@ -87,8 +133,8 @@ final class DiagnosticsRecorder
             LoginOutcome::Error,
             $reasonCode,
             $message,
-            $payload?->issuer() ?? '',
-            $payload?->nameId() ?? '',
+            $payload?->issuer() ?? $issuer,
+            $payload?->nameId() ?? $subject,
             $payload?->all() ?? []
         );
 

@@ -336,10 +336,33 @@ class SsoController extends Controller
                 $protocol,
                 DiagnosticEvent::STAGE_SESSION,
                 $result->reasonCode,
-                $result->message
+                $result->message,
+                null,
+                (string)($completion->issuer ?? ''),
+                (string)($completion->subject ?? '')
             );
 
             return $this->refuse();
+        }
+
+        // THE ROW THAT MEANS "SIGNED IN". The provisioning row above it in the panel was written
+        // when the login was accepted, before the account was saved and the session started;
+        // this one is written only now that both happened.
+        //
+        // Inside a try for the same reason as the bookkeeping below: the person IS signed in,
+        // and a diagnostics fault must cost the administrator a row, never the visitor the
+        // session they legitimately obtained.
+        try {
+            $runtime->diagnostics()->recordSignedIn(
+                $protocol,
+                $result->reasonCode,
+                $result->message,
+                (string)($completion->issuer ?? ''),
+                (string)($completion->subject ?? ''),
+                $result->userId
+            );
+        } catch (Throwable) {
+            // Deliberately silent: the component that would report this is the one that failed.
         }
 
         // The subject of THIS session, written down for single logout to match against later -

@@ -47,6 +47,19 @@ return [
         Assert::false(Ascii::hasControlCharacters('zażółć'));
     },
 
+    'printable reduces foreign text to bounded, printable ASCII' => static function (): void {
+        Assert::same('HTTP 401: invalid_client.', Ascii::printable('HTTP 401: invalid_client.', 400));
+        Assert::same('a??b?c', Ascii::printable("a\r\nb\tc", 400), 'no line break survives');
+        Assert::same('a?b', Ascii::printable("a\0b", 400));
+        Assert::same('a?[31mb', Ascii::printable("a\x1b[31mb", 400), 'no terminal escape survives');
+        Assert::same('za????', Ascii::printable('zażó', 400), 'one "?" per byte, never half a sequence');
+        Assert::same('?(', Ascii::printable("\xC3\x28", 400), 'malformed UTF-8 is neutralised');
+        Assert::notSame(false, json_encode(Ascii::printable("\xC3\x28\xFF", 400)), 'and what is left encodes');
+        Assert::same('abc', Ascii::printable('abcdef', 3));
+        Assert::same('', Ascii::printable('abc', 0));
+        Assert::same('', Ascii::printable('', 10));
+    },
+
     'characters splits UTF-8 without ext-mbstring' => static function (): void {
         Assert::sameList(['a', 'ż', 'ó', 'b'], Ascii::characters('ażób'));
         Assert::same(4, Ascii::characterCount('ażób'));

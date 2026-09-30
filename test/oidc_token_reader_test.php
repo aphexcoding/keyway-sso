@@ -7,6 +7,7 @@ use Keyway\Sso\Core\Http\HttpResponse;
 use Keyway\Sso\Core\Http\HttpTransportException;
 use Keyway\Sso\Core\Identity\IdentityPayload;
 use Keyway\Sso\Core\Identity\IdentityReaderException;
+use Keyway\Sso\Core\Port\RejectionDetailInterface;
 use Keyway\Sso\Core\State\RedirectGuard;
 use Keyway\Sso\Core\State\StateStore;
 use Keyway\Sso\Core\Support\InMemoryKeyValueCache;
@@ -952,6 +953,53 @@ return [
         },
 
     // ------------------------------------------------------------------ A8: failure discipline
+
+    // The detail is what LoginFlow puts in the diagnostics row, and it only gets there through
+    // RejectionDetailInterface: a reader that stops implementing it goes quiet with every
+    // LoginFlow test still green, because those run on a stand-in.
+    'a wrong client secret is named in the detail the diagnostics row is built from' =>
+        static function () use ($flow): void {
+            $context = $flow(['tokenResponse' => FakeHttpClient::json(['error' => 'invalid_client'], 401)]);
+
+            $error = Assert::throws(IdentityReaderException::class, $context['read']);
+
+            Assert::same(IdentityReaderException::MALFORMED_RESPONSE, $error->reasonCode());
+            Assert::true($context['reader'] instanceof RejectionDetailInterface, 'LoginFlow can ask for the detail');
+            Assert::same('Token endpoint answered HTTP 401: invalid_client.', $context['reader']->detail());
+        },
+
+    // Since 1.0.2 the detail is shown in the administrator's panel. The callback's `error` is
+    // typed by whoever holds a state, and anyone can hold one by starting a login.
+    'only something shaped like an OAuth error code is quoted from the callback' =>
+        static function () use ($flow): void {
+            $context = $flow(['request' => ['error' => 'Your licence expired - renew at https://evil.example/pay']]);
+
+            $error = Assert::throws(IdentityReaderException::class, $context['read']);
+
+            Assert::same(IdentityReaderException::STATUS_NOT_SUCCESS, $error->reasonCode());
+            Assert::same('Identity provider returned the error "(unreadable)".', $context['reader']->detail());
+
+            $plain = $flow(['request' => ['error' => 'access_denied']]);
+            Assert::throws(IdentityReaderException::class, $plain['read']);
+            Assert::contains('"access_denied"', $plain['reader']->detail(), 'a real code is still quoted');
+
+            // `$` alone matches before a trailing newline; the pattern must not.
+            $trailing = $flow(['request' => ['error' => "access_denied\n"]]);
+            Assert::throws(IdentityReaderException::class, $trailing['read']);
+            Assert::contains('(unreadable)', $trailing['reader']->detail());
+        },
+
+    'only something shaped like an OAuth error code is quoted from the token endpoint' =>
+        static function () use ($flow): void {
+            $context = $flow(['tokenResponse' => FakeHttpClient::json(['error' => str_repeat('x', 65)], 400)]);
+
+            Assert::throws(IdentityReaderException::class, $context['read']);
+            Assert::same('Token endpoint answered HTTP 400: (unreadable).', $context['reader']->detail());
+
+            $missing = $flow(['tokenResponse' => FakeHttpClient::json(['message' => 'nope'], 400)]);
+            Assert::throws(IdentityReaderException::class, $missing['read']);
+            Assert::same('Token endpoint answered HTTP 400: no error code.', $missing['reader']->detail());
+        },
 
     'the login screen never learns why, and the diagnostics record always does' =>
         static function () use ($flow): void {

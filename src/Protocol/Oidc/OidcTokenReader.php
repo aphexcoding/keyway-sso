@@ -15,6 +15,7 @@ use Keyway\Sso\Core\Identity\IdentityReaderException;
 use Keyway\Sso\Core\Port\ClockInterface;
 use Keyway\Sso\Core\Port\HttpClientInterface;
 use Keyway\Sso\Core\Port\IdentityReaderInterface;
+use Keyway\Sso\Core\Port\RejectionDetailInterface;
 use Keyway\Sso\Core\Port\ReplayGuardInterface;
 use Keyway\Sso\Core\State\StateStore;
 use stdClass;
@@ -67,7 +68,7 @@ use Throwable;
  * completed at all (DNS, TLS, timeout, size cap) is DISCOVERY_FAILED - we never reached the
  * provider; a call that completed and returned something unusable is MALFORMED_RESPONSE.
  */
-final class OidcTokenReader implements IdentityReaderInterface
+final class OidcTokenReader implements IdentityReaderInterface, RejectionDetailInterface
 {
     use RejectsWithDetail;
 
@@ -169,11 +170,24 @@ final class OidcTokenReader implements IdentityReaderInterface
         // The SAML twin of this is B4: a failed login must never be mistaken for an identity.
         $this->reject(
             IdentityReaderException::STATUS_NOT_SUCCESS,
-            sprintf(
-                'Identity provider returned the error "%s".',
-                is_string($error) ? $error : '(unreadable)'
-            )
+            sprintf('Identity provider returned the error "%s".', self::errorCode($error))
         );
+    }
+
+    /**
+     * An OAuth 2.0 `error` value as it may be quoted in the diagnostics record, or `(unreadable)`.
+     *
+     * Since 1.0.2 the detail reaches the administrator's panel, and on the callback this value
+     * is whatever the visitor put in the query string - the state it rides on is one they can
+     * obtain by starting a login in their own browser. RFC 6749 error codes are short tokens
+     * (`invalid_client`, `access_denied`), so anything else is not quoted at all: a free-text
+     * "your licence expired, go to ..." has no business appearing in a trusted screen.
+     */
+    private static function errorCode(mixed $value): string
+    {
+        return is_string($value) && preg_match('/^[A-Za-z0-9_.-]{1,64}$/D', $value) === 1
+            ? $value
+            : '(unreadable)';
     }
 
     /**
@@ -285,7 +299,7 @@ final class OidcTokenReader implements IdentityReaderInterface
                 sprintf(
                     'Token endpoint answered HTTP %d: %s.',
                     $response->statusCode,
-                    is_string($body['error'] ?? null) ? $body['error'] : 'no error code'
+                    array_key_exists('error', $body) ? self::errorCode($body['error']) : 'no error code'
                 )
             );
         }

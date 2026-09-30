@@ -31,6 +31,7 @@ use Keyway\Sso\Core\State\RedirectGuard;
 use Keyway\Sso\Core\State\StateStore;
 use Keyway\Sso\Test\Support\Assert;
 use Keyway\Sso\Test\Support\CollectingSink;
+use Keyway\Sso\Test\Support\DetailedIdentityReader;
 use Keyway\Sso\Test\Support\FakeAuthenticationStarter;
 use Keyway\Sso\Test\Support\FakeIdentityReader;
 use Keyway\Sso\Test\Support\FixedClock;
@@ -79,6 +80,7 @@ $build = static function (array $options = []): array {
     $connections = [];
     $readers = [];
     $starters = [];
+    $detailed = [];
 
     foreach ($options['connections'] ?? [['oidc', 'state', CallbackStyle::TopLevelRedirect]] as $spec) {
         [$handle, $parameter, $style] = $spec;
@@ -89,7 +91,15 @@ $build = static function (array $options = []): array {
 
         $readers[$handle] = $reader;
         $starters[$handle] = $starter;
-        $connections[] = new LoginConnection($reader, $starter, $style, $url, $parameter);
+
+        // `detailed` wraps the fake in a reader that also keeps an administrator-facing detail,
+        // which is what both shipped readers are. Off by default, so every other case in this
+        // file keeps running against a reader that has none.
+        if ($options['detailed'] ?? false) {
+            $detailed[$handle] = new DetailedIdentityReader($reader);
+        }
+
+        $connections[] = new LoginConnection($detailed[$handle] ?? $reader, $starter, $style, $url, $parameter);
     }
 
     $flow = new LoginFlow(
@@ -114,7 +124,8 @@ $build = static function (array $options = []): array {
         'directory',
         'links',
         'readers',
-        'starters'
+        'starters',
+        'detailed'
     );
 };
 
@@ -320,6 +331,42 @@ return [
                 (string)$kit['sink']->last()?->message,
                 'discovery_failed and issuer_mismatch send an administrator to different places'
             );
+        },
+
+    // The most common OIDC fault of all is a wrong issuer URL, and it fails HERE, before the
+    // browser ever leaves. OidcDiscovery shares its RejectionDetail with the reader, so the
+    // reader's detail is the discovery's.
+    'a start refused by the provider carries the detail, and reads as two sentences' =>
+        static function () use ($build): void {
+            $kit = $build(['detailed' => true]);
+            $kit['starters']['oidc']->throw = new IdentityReaderException(
+                IdentityReaderException::DISCOVERY_FAILED,
+                'We could not verify the sign-in response from your identity provider.'
+            );
+            $kit['detailed']['oidc']->detail = 'Discovery endpoint answered with HTTP 404.';
+
+            $start = $kit['flow']->begin('/admin');
+
+            Assert::same(
+                'The authentication request could not be built. We could not verify the sign-in '
+                . 'response from your identity provider. (discovery_failed) Detail: Discovery '
+                . 'endpoint answered with HTTP 404.',
+                (string)$kit['sink']->last()?->message
+            );
+            Assert::same(LoginRefusal::PUBLIC_MESSAGE, $start->publicMessage());
+        },
+
+    // A detail is "the LAST rejection". A start that failed for a reason the reader never saw
+    // must not borrow whatever the reader happened to be holding.
+    'a start that failed outside the protocol layer does not quote the reader' =>
+        static function () use ($build): void {
+            $kit = $build(['detailed' => true]);
+            $kit['starters']['oidc']->throw = new RuntimeException('Could not DEFLATE the SAML request.');
+            $kit['detailed']['oidc']->detail = 'Something about an earlier rejection.';
+
+            $kit['flow']->begin('/admin');
+
+            Assert::notContains('earlier rejection', (string)$kit['sink']->last()?->message);
         },
 
     'a plain RuntimeException from the SAML request builder is caught too' =>
@@ -1009,6 +1056,73 @@ return [
             Assert::same(LoginRefusal::IDENTITY_REJECTED, $result->reasonCode);
             Assert::contains(IdentityReaderException::SIGNATURE_INVALID, $result->message);
             Assert::same(DiagnosticEvent::STAGE_PROTOCOL, $kit['sink']->last()?->stage);
+        },
+
+    // `malformed_response` is true of a wrong client secret and of a token endpoint that
+    // answered with a login page. The reason code cannot tell them apart; the reader's detail
+    // can - and until 1.0.2 it never left the reader.
+    'a rejected response carries the reader\'s detail into the diagnostics'
+        => static function () use ($build, $roundTrip): void {
+            $kit = $build(['detailed' => true]);
+            $kit['readers']['oidc']->failure = new IdentityReaderException(
+                IdentityReaderException::MALFORMED_RESPONSE,
+                'We could not verify the sign-in response from your identity provider.'
+            );
+            $kit['detailed']['oidc']->detail = 'Token endpoint answered HTTP 401: invalid_client.';
+
+            [$token, $cookie] = $roundTrip($kit);
+            $result = $kit['flow']->complete(['state' => $token], $cookie);
+
+            $message = (string)$kit['sink']->last()?->message;
+
+            Assert::false($result->allowed);
+            Assert::contains('(malformed_response)', $message, 'the reason code stays');
+            Assert::contains('Detail: Token endpoint answered HTTP 401: invalid_client.', $message);
+            Assert::same(LoginRefusal::PUBLIC_MESSAGE, $result->publicMessage(), 'and the visitor learns none of it');
+        },
+
+    // The detail quotes the identity provider and, through it, anyone who can reach the login
+    // endpoint (`?error=...` is copied into it verbatim). It lands in a log line and in a JSON
+    // row, so it is reduced to printable ASCII and bounded before it gets there.
+    'a hostile detail cannot forge a log line, break the row or grow without bound'
+        => static function () use ($build, $roundTrip): void {
+            $kit = $build(['detailed' => true]);
+            $kit['readers']['oidc']->failure = new IdentityReaderException(
+                IdentityReaderException::MALFORMED_RESPONSE,
+                'We could not verify the sign-in response from your identity provider.'
+            );
+            $kit['detailed']['oidc']->detail = "Identity provider returned the error \"x\r\n2026-01-01 [error] forged\x1b[31m\xC3\x28\"."
+                . str_repeat('A', 5000);
+
+            [$token, $cookie] = $roundTrip($kit);
+            $kit['flow']->complete(['state' => $token], $cookie);
+
+            $event = $kit['sink']->last();
+            $message = (string)$event?->message;
+
+            Assert::same(0, preg_match('/[^\x20-\x7E]/', $message), 'printable ASCII only');
+            Assert::contains('x??2026-01-01 [error] forged?[31m?(', $message, 'the bytes are replaced, not dropped silently');
+            Assert::true(strlen($message) < 600, 'bounded well inside the 1024-byte message cap');
+            Assert::contains('"reason":"identity_rejected"', (string)$event?->toJson(), 'the row still encodes');
+        },
+
+    'a reader with nothing to add leaves the message as it was'
+        => static function () use ($build, $roundTrip): void {
+            foreach ([['detailed' => true], []] as $options) {
+                $kit = $build($options);
+                $kit['readers']['oidc']->failure = new IdentityReaderException(
+                    IdentityReaderException::SIGNATURE_INVALID,
+                    'We could not verify the sign-in response from your identity provider.'
+                );
+
+                [$token, $cookie] = $roundTrip($kit);
+                $kit['flow']->complete(['state' => $token], $cookie);
+
+                Assert::same(
+                    'We could not verify the sign-in response from your identity provider. (signature_invalid)',
+                    (string)$kit['sink']->last()?->message
+                );
+            }
         },
 
     'a missing required attribute is refused at the mapping stage' => static function () use ($build, $roundTrip): void {

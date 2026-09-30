@@ -1,5 +1,38 @@
 # Release Notes for Keyway SSO
 
+## 1.0.2 - 2026-09-30
+
+### Added
+
+- The diagnostics screen now writes a **Signed in** row at stage **Session** once Craft has
+  actually started the session. It carries the same issuer and masked subject as the rest of the
+  attempt, so the search finds it — and so does the red **Session** row of a login that failed at
+  the last step (`no_cp_access`, `user_not_saved`). A successful login now takes two rows instead
+  of one, so the retained history covers fewer logins than before at the same row limit.
+- A rejected sign-in response now ends its diagnostics message with **Detail:** — what the
+  provider or the parser actually said. A wrong OpenID Connect client secret reads
+  `Detail: Token endpoint answered HTTP 401: unauthorized_client.` (Keycloak's answer)
+  instead of a generic `malformed_response`. The text is reduced to plain ASCII and
+  length-limited; the person signing in still sees only the neutral refusal. An OAuth `error` code is quoted only when it looks like
+  one (letters, digits, `_`, `.`, `-`, up to 64 characters).
+- Automated tests for encrypted SAML assertions, with real encryption (AES-256-CBC content,
+  RSA-OAEP key transport): decrypted and read, refused without an SP private key, refused when
+  encrypted to another certificate, refused when the decrypted assertion is unsigned or signed by
+  somebody else.
+
+### Changed
+
+- The successful **Provisioning** row is labelled **Accepted** instead of **Signed in**. It is
+  written before the account is saved and the session starts, so it could appear green next to a
+  red `no_cp_access` or `user_not_saved` row for a person who never got in. Rows stored by earlier
+  versions are read with the new labels. The outcome filter calls this option
+  **Accepted or signed in**.
+- The configuration warning about an unset environment variable names the field as the settings
+  screen does (**Client secret**, **SP private key**), not by its internal property name.
+- A `start_failed` message reads as two sentences instead of one joined with a colon.
+- The diagnostics screen registers its stylesheet through Craft (`{% css %}`) instead of an inline
+  `<style>` element.
+
 ## 1.0.1 - 2026-09-30
 
 ### Changed

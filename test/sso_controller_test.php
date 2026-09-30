@@ -212,6 +212,55 @@ return [
             Assert::notContains('ProvisioningAction::Create', $body);
         },
 
+    // "Signed in" has to mean it. The row is written after the sign-in RETURNED OK - not before
+    // it, where a `user_not_saved` would leave a green "Signed in" beside the red row - and
+    // inside a try, because the person is signed in by then and a diagnostics fault must not
+    // cost them the session.
+    'the signed-in row is written only after the sign-in succeeded, and cannot break it' =>
+        static function () use ($code): void {
+            $body = substr($code(), (int)strpos($code(), 'private function finish('));
+
+            $signIn = strpos($body, '->signIn()->signIn($decision)');
+            $failed = strpos($body, 'if (!$result->ok)');
+            $row = strpos($body, '->recordSignedIn(');
+            $redirect = strrpos($body, '$this->redirect(');
+
+            Assert::true($row !== false, 'the row is written');
+            Assert::same(1, substr_count($body, '->recordSignedIn('), 'and written once');
+            Assert::true($signIn !== false && $failed !== false);
+            Assert::true((int)$signIn < (int)$failed && (int)$failed < (int)$row, 'after the failure path has returned');
+            Assert::true((int)$row < (int)$redirect, 'and before the redirect');
+
+            // Found by the same search as the rest of the attempt: the issuer and the subject the
+            // decision row was written from, not blanks.
+            $call = substr($body, (int)$row, (int)strpos($body, ');', (int)$row) - (int)$row);
+            Assert::contains('$completion->issuer', $call);
+            Assert::contains('$completion->subject', $call);
+            Assert::contains('$result->userId', $call);
+            Assert::true(
+                strpos($call, '$completion->issuer') < strpos($call, '$completion->subject'),
+                'in the recorder\'s order: an issuer in the subject column is masked and found by nothing'
+            );
+
+            // And the red session row of a login that failed at the last step carries them too.
+            $failure = substr($body, (int)$failed, (int)strpos($body, 'return $this->refuse();', (int)$failed) - (int)$failed);
+            Assert::contains('->recordFailure(', $failure);
+            Assert::contains('$completion->issuer', $failure);
+            Assert::contains('$completion->subject', $failure);
+            Assert::true(strpos($failure, '$completion->issuer') < strpos($failure, '$completion->subject'));
+
+            $before = substr($body, 0, (int)$row);
+            Assert::true(
+                strrpos($before, 'try {') > strrpos($before, '}'),
+                'the call is the first statement of its own try block'
+            );
+            Assert::same(
+                1,
+                preg_match('/->recordSignedIn\([^;]*;\s*\}\s*catch\s*\(Throwable\)/', $body),
+                'and that try swallows whatever the diagnostics runtime throws'
+            );
+        },
+
     'the visitor is never told why' => static function () use ($code): void {
         $source = $code();
 

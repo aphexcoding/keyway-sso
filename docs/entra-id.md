@@ -291,9 +291,9 @@ Full detail: [troubleshooting → Locked out of the control panel](troubleshooti
 
 **If it works**, you land back in the control panel. Then go and look at the row anyway: Settings →
 Plugins → Keyway SSO → **Open sign-in diagnostics**. A green **Signed in** row at stage
-**Provisioning** with reason `jit_create` means a new Craft account was created;
+**Session**, with a green **Accepted** row at stage **Provisioning** under it: reason `jit_create` on the second means a new Craft account was created;
 `update_on_login` means an existing one matched and was updated; `existing_unchanged` means it
-matched and nothing was changed. A **Provisioning** row records the *decision*, written before the account is saved and the session starts. If an **Error** row at stage **Session** (for example `no_cp_access` or `user_not_saved`) stands directly above it, both belong to the same attempt and the person was **not** signed in. Expand **Details** and check **Mapped to** — this is where you
+matched and nothing was changed. A **Provisioning** row records the *decision*, written before the account is saved and the session starts. If an **Error** row at stage **Session** (for example `no_cp_access` or `user_not_saved`) stands directly above it instead of **Signed in**, both belong to the same attempt and the person was **not** signed in. Expand **Details** and check **Mapped to** — this is where you
 confirm that the Craft groups are the ones you intended, and it is worth doing on day one rather
 than after somebody has the wrong permissions.
 

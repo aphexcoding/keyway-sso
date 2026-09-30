@@ -14,6 +14,7 @@ use Keyway\Sso\Core\Group\GroupMapper;
 use Keyway\Sso\Core\Identity\IdentityPayload;
 use Keyway\Sso\Core\Identity\IdentityReaderException;
 use Keyway\Sso\Core\Port\IdentityLinkStoreInterface;
+use Keyway\Sso\Core\Port\RejectionDetailInterface;
 use Keyway\Sso\Core\Port\UserDirectoryInterface;
 use Keyway\Sso\Core\Provisioning\ExistingUser;
 use Keyway\Sso\Core\Provisioning\ProvisioningPolicy;
@@ -67,6 +68,9 @@ use Throwable;
  */
 final class LoginFlow
 {
+    /** Upper bound on a reader's detail inside a diagnostics message (which is capped at 1024). */
+    private const MAX_DETAIL_BYTES = 400;
+
     private StateStore $stateStore;
     private BrowserBinding $binding;
     private AttributeMapper $attributes;
@@ -187,12 +191,12 @@ final class LoginFlow
                 $connection->handle,
                 DiagnosticEvent::STAGE_PROTOCOL,
                 LoginRefusal::START_FAILED,
-                self::startFailure($error)
+                self::startFailure($error, $connection)
             );
 
             return LoginStart::refused(
                 LoginRefusal::START_FAILED,
-                'The authentication request could not be built: ' . $error->getMessage(),
+                'The authentication request could not be built. ' . $error->getMessage(),
                 $event
             );
         }
@@ -352,7 +356,7 @@ final class LoginFlow
                 $connection,
                 DiagnosticEvent::STAGE_PROTOCOL,
                 LoginRefusal::IDENTITY_REJECTED,
-                $error->getMessage() . ' (' . $error->reasonCode() . ')',
+                $error->getMessage() . ' (' . $error->reasonCode() . ')' . self::detailOf($connection),
                 $status
             );
         }
@@ -614,13 +618,43 @@ final class LoginFlow
      * a rejected response: `discovery_failed` and `issuer_mismatch` send an administrator to two
      * different places, and the sentence alone does not always separate them.
      */
-    private static function startFailure(RuntimeException $error): string
+    private static function startFailure(RuntimeException $error, LoginConnection $connection): string
     {
-        $message = 'The authentication request could not be built: ' . $error->getMessage();
+        $message = 'The authentication request could not be built. ' . $error->getMessage();
 
         return $error instanceof IdentityReaderException
-            ? $message . ' (' . $error->reasonCode() . ')'
+            ? $message . ' (' . $error->reasonCode() . ')' . self::detailOf($connection)
             : $message;
+    }
+
+    /**
+     * What the reader kept aside about the rejection it has just thrown, ready to append.
+     *
+     * The reason code names the class of failure; this is the sentence that separates two
+     * failures of the same class. A wrong OIDC client secret and a token endpoint answering
+     * with a login page are both `malformed_response`, and without the detail the diagnostics
+     * panel - the reason somebody bought this plugin - says the same thing for both.
+     *
+     * ONLY EVER CALLED RIGHT AFTER CATCHING AN IdentityReaderException from this connection.
+     * The detail is "the last rejection", so asked at any other moment it could describe an
+     * earlier one.
+     *
+     * THE TEXT IS NOT OURS: it quotes the identity provider and the callback (see
+     * RejectionDetailInterface). It is cut down to printable ASCII and bounded here, goes only
+     * to the diagnostics record and the log, and never into anything a visitor is shown -
+     * LoginCompletion::publicMessage() and LoginStart::publicMessage() do not read `message`.
+     */
+    private static function detailOf(LoginConnection $connection): string
+    {
+        $reader = $connection->reader();
+
+        if (!$reader instanceof RejectionDetailInterface) {
+            return '';
+        }
+
+        $detail = Ascii::trim(Ascii::printable($reader->detail(), self::MAX_DETAIL_BYTES));
+
+        return $detail === '' ? '' : ' Detail: ' . $detail;
     }
 
     /**

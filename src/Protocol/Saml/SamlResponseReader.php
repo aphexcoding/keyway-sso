@@ -12,6 +12,7 @@ use Keyway\Sso\Core\Identity\IdentityPayload;
 use Keyway\Sso\Core\Identity\IdentityReaderException;
 use Keyway\Sso\Core\Port\ClockInterface;
 use Keyway\Sso\Core\Port\IdentityReaderInterface;
+use Keyway\Sso\Core\Port\RejectionDetailInterface;
 use Keyway\Sso\Core\Port\ReplayGuardInterface;
 use Keyway\Sso\Core\State\StateStore;
 use OneLogin\Saml2\Constants;
@@ -63,7 +64,7 @@ use Throwable;
  * detail an administrator needs stays in `detail()`, which callers put in the masked diagnostics
  * record; it never reaches the login screen.
  */
-final class SamlResponseReader implements IdentityReaderInterface
+final class SamlResponseReader implements IdentityReaderInterface, RejectionDetailInterface
 {
     private const NS_SAML = Constants::NS_SAML;
     private const NS_SAMLP = Constants::NS_SAMLP;

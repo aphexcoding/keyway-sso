@@ -142,6 +142,27 @@ $render = static function (array $variables) use ($templatePath): string {
         }
     });
 
+    // `{% css %}...{% endcss %}`: Craft's node hands the captured body to the view's asset
+    // registry, which does not exist here. The stand-in swallows the pair and renders nothing -
+    // so the assertion that matters can be made: the stylesheet is NOT in the markup the
+    // template itself emits.
+    $twig->addTokenParser(new class extends \Twig\TokenParser\AbstractTokenParser {
+        public function parse(\Twig\Token $token): \Twig\Node\Node
+        {
+            $stream = $this->parser->getStream();
+            $stream->expect(\Twig\Token::BLOCK_END_TYPE);
+            $this->parser->subparse(static fn(\Twig\Token $next): bool => $next->test('endcss'), true);
+            $stream->expect(\Twig\Token::BLOCK_END_TYPE);
+
+            return new \Twig\Node\Nodes([], $token->getLine());
+        }
+
+        public function getTag(): string
+        {
+            return 'css';
+        }
+    });
+
     return $twig->render('diagnostics', $variables);
 };
 
@@ -489,6 +510,15 @@ return [
             static fn(string $name): \Twig\TwigFunction => new \Twig\TwigFunction($name, static fn(...$arguments): string => '')
         );
         $twig->addTokenParser(new \craft\web\twig\tokenparsers\RequireAdminTokenParser());
+        // Craft's own parser for `{% css %}`, configured the way craft\web\twig\Extension
+        // registers it - so a tag pair Craft would refuse is refused here too.
+        $cssParser = new \craft\web\twig\tokenparsers\RegisterResourceTokenParser(
+            'css',
+            \craft\helpers\Template::class . '::css'
+        );
+        $cssParser->allowTagPair = true;
+        $cssParser->allowOptions = true;
+        $twig->addTokenParser($cssParser);
 
         $twigSource = new \Twig\Source($source, 'diagnostics', $templatePath());
 
@@ -507,6 +537,57 @@ return [
 
         Assert::true(strlen($compiled) > 1000, 'something was actually compiled');
     },
+
+    // A successful row at the provisioning stage is a login that was ACCEPTED: the account write
+    // and the session start are still ahead of it, and both can fail. Before 1.0.2 that row was
+    // labelled "Signed in", so `no_cp_access` left a green "Signed in" beside the red row that
+    // said the person never got in.
+    '"Signed in" is said by the session row only; an accepted decision says "Accepted"' =>
+        static function () use ($render, $screen, $row): void {
+            $html = $render($screen([
+                'rows' => [
+                    $row(['outcome' => 'error', 'stage' => 'session', 'reasonCode' => 'no_cp_access']),
+                    $row(['outcome' => 'success', 'stage' => 'provisioning', 'reasonCode' => 'user_created']),
+                ],
+                'total' => 2,
+            ]));
+
+            Assert::contains('Accepted', $html);
+            Assert::contains('<code>no_cp_access</code>', $html);
+            Assert::notContains('Signed in', $html, 'nobody was signed in, and the screen does not say so');
+
+            $both = $render($screen([
+                'rows' => [
+                    $row(['outcome' => 'success', 'stage' => 'session', 'reasonCode' => 'signed_in']),
+                    $row(['outcome' => 'success', 'stage' => 'provisioning', 'reasonCode' => 'user_updated']),
+                ],
+                'total' => 2,
+            ]));
+
+            Assert::same(1, substr_count($both, 'Signed in'));
+            Assert::same(2, substr_count($both, 'status green'), 'both rows are good news');
+        },
+
+    // The filter selects by stored outcome, and `success` now covers two labels.
+    'the outcome filter names both kinds of successful row' =>
+        static function () use ($render, $screen): void {
+            $html = $render($screen(['outcome' => 'success', 'filtered' => true]));
+
+            Assert::contains('Accepted or signed in', $html);
+        },
+
+    // The stylesheet goes through Craft's view ({% css %}), not into the body as a bare
+    // <style>: that is what lets a site with a Content-Security-Policy nonce keep its policy.
+    'the screen registers its stylesheet instead of inlining it' =>
+        static function () use ($template, $render, $screen): void {
+            $source = $template();
+
+            Assert::notContains('<style', $source);
+            Assert::contains('{% css %}', $source);
+            Assert::contains('{% endcss %}', $source);
+            Assert::notContains('<style', $render($screen([])));
+            Assert::notContains('keyway-diagnostics-pairs {', $render($screen([])), 'the rules are not in the markup');
+        },
 
     // Every value on a row arrived from somebody else's identity provider. Masked is not the
     // same as harmless: an issuer of `<img src=x onerror=...>` would be script running in an
@@ -666,6 +747,7 @@ return [
             Assert::contains('<code>signed_in</code>', $html, 'the code support asks for, verbatim');
             Assert::contains('status green', $html, 'signed in reads as signed in');
             Assert::contains('Signed in', $html, 'and says so in words, not only in colour');
+            Assert::same(1, substr_count($html, 'Signed in'), 'once: on the row, not in the filter');
             Assert::contains('OpenID Connect', $html, 'a label, not the stored identifier');
             Assert::contains('2025-09', $html, 'the timestamp went through a date formatter');
 

@@ -229,8 +229,8 @@ domain.
    configuration is usable; if it is missing, the warnings on the settings screen say why.
 2. Sign in as the Okta user you assigned in Step 2.
 3. Open **Open sign-in diagnostics** at the bottom of the settings screen — after a success as
-   well as after a failure. Each attempt is a row: time, outcome (`Signed in`, `Refused`, `Error`,
-   `Notice`), protocol, stage (`Protocol`, `Login state`, `Attributes`, `Groups`, `Provisioning`,
+   well as after a failure. Each attempt is a row: time, outcome (`Accepted`, `Signed in`, `Refused`,
+   `Error`, `Notice`), protocol, stage (`Protocol`, `Login state`, `Attributes`, `Groups`, `Provisioning`,
    `Session`), reason code, subject, issuer, and a **Details** panel with the attributes received,
    what they mapped to, and the decision taken. You can filter by outcome, by protocol and by a
    search term.
@@ -319,8 +319,8 @@ provider Single Logout has been exercised against end to end is Keycloak — see
   signed request, every login fails at Okta.
 * **OpenID Connect with Okta is unverified.** The fields exist and the protocol is implemented,
   but this combination has not been tested; the ACS-based SAML path above is the supported one.
-* **Encrypted assertions** are implemented in the plugin (**SP private key**) but **unverified**
-  — not covered by an automated test and not run against a live Okta tenant. There is also no field
+* **Encrypted assertions** are implemented in the plugin (**SP private key**) and covered by
+  automated tests with real encryption, but **not run against a live Okta tenant**. There is also no field
   for an SP *certificate*, so the metadata document contains no key material. If you turn on
   assertion encryption in Okta, the certificate matching your private key has to get there by
   another route.

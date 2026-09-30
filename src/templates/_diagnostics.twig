@@ -26,11 +26,19 @@
    to itself (`?? row.stage`) instead of rendering as an empty cell. A row written by a newer
    version of this plugin must still be readable by an older screen. #}
 {% set outcomeLabels = {
-    'success': "Signed in"|t('keyway-sso'),
+    'success': "Accepted"|t('keyway-sso'),
     'denied': "Refused"|t('keyway-sso'),
     'error': "Error"|t('keyway-sso'),
     'notice': "Notice"|t('keyway-sso'),
 } %}
+
+{# "Signed in" is said by ONE row only: the `session` row written after Craft started the
+   session. A successful row at any earlier stage is a login that was ACCEPTED - the account
+   write and the session start were still ahead of it and can fail (`user_not_saved`,
+   `no_cp_access`), and a green "Signed in" next to that red row is a screen contradicting
+   itself. Decided by stage, not stored: a row written by an older version keeps reading true. #}
+{% set signedInLabel = "Signed in"|t('keyway-sso') %}
+{% set successFilterLabel = "Accepted or signed in"|t('keyway-sso') %}
 
 {# Colour is the SECOND signal, never the only one: each cell also carries the word. #}
 {% set outcomeColours = {
@@ -92,14 +100,17 @@
 {% import _self as ui %}
 
 {% block content %}
-    {# The screen's own layout, inline because it is forty lines and this plugin ships no asset
-       bundle. Nothing in here is a row value: it is a constant block, so the "no raw output"
-       rule above is untouched. Two things it exists for:
+    {# The screen's own layout, registered through {% css %} because it is forty lines and this
+       plugin ships no asset bundle: Craft then emits it in the head with the page's other
+       registered styles, where a site's CSP handling can reach it, instead of as a bare
+       <style> in the body. Nothing in
+       here is a row value: it is a constant block, so the "no raw output" rule above is
+       untouched. Two things it exists for:
        - the filter bar. Craft's `.tablepane` carries a negative top margin (it is designed to
          be the first thing in a pane), so directly under a form it slid over the form's last
          22px - the selects and the Apply button were cut and the search hint was hidden;
        - the expanded entry, which without it was one value per line, three screens tall. #}
-    <style>
+    {% css %}
         .keyway-diagnostics-filters { margin: 24px 0; }
         .keyway-diagnostics-filters > .flex { align-items: flex-start; gap: 14px; flex-wrap: wrap; }
         .keyway-diagnostics-filters .field { margin: 0; }
@@ -127,7 +138,7 @@
         .keyway-diagnostics-tree .keyway-diagnostics-tree { margin-top: 4px; padding-inline-start: 18px; }
         .keyway-diagnostics-pairs .keyway-diagnostics-tree li { display: inline; }
         .keyway-diagnostics-pairs .keyway-diagnostics-tree li + li::before { content: "\00B7"; }
-    </style>
+    {% endcss %}
 
     <div class="readable">
         <p>
@@ -173,7 +184,7 @@
                             <option value="">{{ "All outcomes"|t('keyway-sso') }}</option>
                             {% for option in outcomeOptions %}
                                 <option value="{{ option }}"{% if outcome == option %} selected{% endif %}>
-                                    {{ outcomeLabels[option] ?? option }}
+                                    {{ option == 'success' ? successFilterLabel : (outcomeLabels[option] ?? option) }}
                                 </option>
                             {% endfor %}
                         </select>
@@ -289,7 +300,7 @@
                             <td class="nowrap">{{ row.timestamp|datetime('short') }}</td>
                             <td class="nowrap">
                                 <span class="status {{ outcomeColours[row.outcome] ?? 'light' }}" aria-hidden="true"></span>
-                                {{ outcomeLabels[row.outcome] ?? row.outcome }}
+                                {{ row.outcome == 'success' and row.stage == 'session' ? signedInLabel : (outcomeLabels[row.outcome] ?? row.outcome) }}
                             </td>
                             <td class="nowrap">{{ protocolLabels[row.protocol] ?? row.protocol }}</td>
                             <td class="nowrap">{{ stageLabels[row.stage] ?? row.stage }}</td>

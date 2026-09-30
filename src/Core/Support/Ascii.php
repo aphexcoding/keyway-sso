@@ -165,6 +165,26 @@ final class Ascii
     }
 
     /**
+     * Reduces somebody else's text to printable ASCII, at most $maxBytes long.
+     *
+     * For text that is quoted into a diagnostics message and a log line but was written by an
+     * identity provider or by whoever reached the login endpoint. Every byte outside 0x20-0x7E
+     * becomes "?": that removes line breaks (a forged second log line), terminal escapes, and
+     * malformed UTF-8 - which json_encode() refuses, so one bad byte would otherwise drop the
+     * whole diagnostic entry. It does NOT make the text HTML; the template's autoescaping does.
+     */
+    public static function printable(string $value, int $maxBytes): string
+    {
+        if ($maxBytes <= 0) {
+            return '';
+        }
+
+        $clean = preg_replace('/[^\x20-\x7E]/', '?', $value);
+
+        return substr(is_string($clean) ? $clean : '', 0, $maxBytes);
+    }
+
+    /**
      * True when the string contains no C0/C1 control characters (including CR, LF, NUL).
      */
     public static function hasControlCharacters(string $value): bool

@@ -291,7 +291,7 @@ of your own control panel.
    read the warnings.
 2. Press it. You should land on Keycloak, authenticate, and come back signed in.
 3. Whatever happens, open **Settings → Plugins → Keyway SSO → Open sign-in diagnostics**. Each
-   attempt is one row: time, outcome (`Signed in`, `Refused`, `Error`, `Notice`), protocol, the
+   attempt is one row: time, outcome (`Accepted`, `Signed in`, `Refused`, `Error`, `Notice`), protocol, the
    stage it reached (`Protocol`, `Login state`, `Attributes`, `Groups`, `Provisioning`,
    `Session`), a machine reason code, the subject and the issuer. Open **Details** to see the
    attributes that arrived, what they mapped to, and the decision.
@@ -314,7 +314,8 @@ of your own control panel.
      publishes — a trailing slash is enough.
    * `identity_rejected` with `(malformed_response)` right after a successful sign-in at Keycloak
      — the token endpoint refused the code exchange. With a confidential client that is nearly
-     always a wrong **Client secret**. The row does not quote Keycloak's answer.
+     always a wrong **Client secret**; since 1.0.2 the row ends with Keycloak's answer, for example
+     `Detail: Token endpoint answered HTTP 401: unauthorized_client.`
    * `identity_rejected` with `(discovery_failed)` after the sign-in at Keycloak — the code
      exchange could not be completed at all: the Craft server lost its route to Keycloak, or does
      not trust its certificate.
@@ -395,8 +396,8 @@ see [okta.md](okta.md)). Treat both as unverified rather than as working.
   match the path form.
 * **Only `RS256` and `ES256`** id-token signatures are accepted. Keycloak's default realm key is
   RS256, so this only matters if somebody changed it.
-* **Encrypted assertions** are implemented (**SP private key**) but **unverified** — not covered
-  by an automated test and not run against a live Keycloak realm, so test before relying on
+* **Encrypted assertions** are implemented (**SP private key**) and covered by automated tests
+  with real encryption, but **not run against a live Keycloak realm**, so test before relying on
   them. The metadata document also publishes no key material, so the matching SP certificate has
   to reach Keycloak by another route.
 * **The password fallback refuses a sign-in rather than hiding the password form**, and only on

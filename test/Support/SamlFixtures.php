@@ -31,6 +31,10 @@ final class SamlFixtures
     private static ?string $otherCert = null;
     private static ?string $otherKey = null;
 
+    /** The service provider's own pair, for encrypted assertions. */
+    private static ?string $spCert = null;
+    private static ?string $spKey = null;
+
     public static function cert(): string
     {
         self::ensureKeys();
@@ -43,6 +47,86 @@ final class SamlFixtures
         self::ensureKeys();
 
         return (string)self::$key;
+    }
+
+    /** The service provider's own pair: what an IdP encrypts an assertion to. */
+    public static function spCert(): string
+    {
+        self::ensureSpKeys();
+
+        return (string)self::$spCert;
+    }
+
+    public static function spKey(): string
+    {
+        self::ensureSpKeys();
+
+        return (string)self::$spKey;
+    }
+
+    private static function ensureSpKeys(): void
+    {
+        if (self::$spCert !== null) {
+            return;
+        }
+
+        [self::$spCert, self::$spKey] = self::generate('craft.example.test');
+    }
+
+    /**
+     * Turns the assertion of a finished response into an EncryptedAssertion, the way an identity
+     * provider does it: AFTER signing, so the signature travels inside the ciphertext.
+     *
+     * Real cryptography, like everything else in this class - AES-256-CBC for the assertion and
+     * RSA-OAEP for the session key, both produced by the library, to the certificate given. A
+     * fixture that only wrapped the assertion in an element called EncryptedAssertion would
+     * prove the reader finds an element, not that it can decrypt one.
+     *
+     * @param string $response Base64 response, as response() returns it.
+     * @param string $recipientCert PEM certificate the session key is encrypted to.
+     */
+    public static function encryptAssertion(string $response, string $recipientCert): string
+    {
+        $document = new \DOMDocument();
+        if (!$document->loadXML((string)base64_decode($response, true))) {
+            throw new \RuntimeException('encryptAssertion() was handed something that is not XML.');
+        }
+
+        $xpath = new \DOMXPath($document);
+        $xpath->registerNamespace('samlp', 'urn:oasis:names:tc:SAML:2.0:protocol');
+        $xpath->registerNamespace('saml', 'urn:oasis:names:tc:SAML:2.0:assertion');
+
+        $assertion = $xpath->query('/samlp:Response/saml:Assertion')?->item(0);
+        if (!$assertion instanceof \DOMElement) {
+            throw new \RuntimeException('encryptAssertion() found no top-level assertion to encrypt.');
+        }
+
+        $encryption = new \RobRichards\XMLSecLibs\XMLSecEnc();
+        $encryption->setNode($assertion);
+        $encryption->type = \RobRichards\XMLSecLibs\XMLSecEnc::Element;
+
+        $sessionKey = new \RobRichards\XMLSecLibs\XMLSecurityKey(
+            \RobRichards\XMLSecLibs\XMLSecurityKey::AES256_CBC
+        );
+        $sessionKey->generateSessionKey();
+
+        $recipient = new \RobRichards\XMLSecLibs\XMLSecurityKey(
+            \RobRichards\XMLSecLibs\XMLSecurityKey::RSA_OAEP_MGF1P,
+            ['type' => 'public']
+        );
+        $recipient->loadKey($recipientCert, false, true);
+
+        $encryption->encryptKey($recipient, $sessionKey);
+        $encryptedData = $encryption->encryptNode($sessionKey, false);
+
+        $wrapper = $document->createElementNS(
+            'urn:oasis:names:tc:SAML:2.0:assertion',
+            'saml:EncryptedAssertion'
+        );
+        $assertion->parentNode?->replaceChild($wrapper, $assertion);
+        $wrapper->appendChild($document->importNode($encryptedData, true));
+
+        return base64_encode((string)$document->saveXML());
     }
 
     public static function foreignCert(): string

@@ -25,14 +25,16 @@ exactly where a failing login has to be diagnosable.
 | Column | What it holds |
 |---|---|
 | Time | When the attempt was handled |
-| Outcome | **Signed in** (green) · **Refused** (orange) · **Error** (red) · **Notice** (blue) |
+| Outcome | **Accepted** (green) · **Signed in** (green) · **Refused** (orange) · **Error** (red) · **Notice** (blue). **Accepted** is the provisioning decision; **Signed in** appears only on the **Session** row written after Craft started the session (since 1.0.2) |
 | Protocol | `SAML 2.0`, `OpenID Connect`, or a raw value such as `unknown` when the attempt failed before the connection could be identified |
 | Stage | `Protocol`, `Login state`, `Attributes`, `Groups`, `Provisioning`, `Session` |
 | Reason | The **reason code**, shown raw in `<code>` — this is the identifier to search for and to quote |
 | Subject | The account identifier from the provider, masked (`j***n@acme.example`) |
 | Issuer | The issuer the response claimed |
 
-Every row has a **Details** expander with five things: the administrator-facing message, **Attributes
+Every row has a **Details** expander with five things: the administrator-facing message (for a
+protocol failure it ends with **Detail:** — the provider's or the parser's own words, reduced to
+plain ASCII), **Attributes
 received**, **Mapped to**, **Decision**, and the **Entry ID** (quote it if you contact support).
 
 **How to read the three parts of a failure, in order:**
@@ -151,7 +153,7 @@ Codes that appear inside `identity_rejected`:
 |---|---|---|
 | `signature_invalid` | The signature does not verify against the configured IdP certificate, or the JWT signature failed. | Re-copy the IdP signing certificate / check that the provider rotated its key. |
 | `signature_coverage` | SAML only: the signature does not cover the assertion that was parsed — missing or duplicate assertion ID, no single `ds:Signature` child, a `Reference` pointing elsewhere, or no enveloped-signature transform. | A provider or proxy is re-wrapping the assertion. Do not relax anything; investigate what modifies the response. |
-| `malformed_response` | The document could not be parsed or is structurally wrong: no `SAMLResponse` field, bad base64, not well-formed XML, a token response that is not JSON, no `id_token`, an unusable `access_token`, a non-Bearer token type, an unreadable `aud`, a missing `iat`. For OpenID Connect this is also what a **wrong client secret** looks like: the provider's token endpoint answers with an error instead of tokens. | For SAML, read the message. For OpenID Connect the message is generic and does not name the defect — check **Client secret** (and the environment variable behind it) first, then the provider's own log. |
+| `malformed_response` | The document could not be parsed or is structurally wrong: no `SAMLResponse` field, bad base64, not well-formed XML, a token response that is not JSON, no `id_token`, an unusable `access_token`, a non-Bearer token type, an unreadable `aud`, a missing `iat`. For OpenID Connect this is also what a **wrong client secret** looks like: the provider's token endpoint answers with an error instead of tokens. | For SAML, read the message. For OpenID Connect, read the **Detail:** part of the message (since 1.0.2): `Token endpoint answered HTTP 401:` followed by `unauthorized_client` (Keycloak) or `invalid_client` (the code the OAuth 2.0 specification uses) is a wrong **Client secret** (check the environment variable behind it too); anything else, compare with the provider's own log. |
 | `issuer_mismatch` | The issuer in the response (or in the discovery document) is not the configured one, compared byte for byte. | Copy the issuer exactly as the provider publishes it, including or excluding a trailing slash. |
 | `audience_mismatch` | SAML: the `AudienceRestriction` does not name this SP entity ID. OIDC: `aud` does not contain the client ID, or there are several audiences and no `azp` naming this client. | Make the SP entity ID / client ID identical on both sides. |
 | `assertion_expired` | A time window did not check out: SAML `NotBefore`/`NotOnOrAfter`, or OIDC `exp` / `iat` in the future / id token older than the accepted login window (5 minutes) / `nbf`. | Check clock sync on both machines first. Clock skew tolerance is configurable up to 120 seconds; the checks themselves cannot be turned off. |
@@ -198,7 +200,7 @@ the Craft settings screen, not at the provider.
 
 Successful provisioning rows use `jit_create` (a new account is to be created), `update_on_login`
 (an existing account matched and mapped values are applied) and `existing_unchanged` (matched, sync
-on login is off, nothing changed). A **Provisioning** row records the *decision*, written before the account is saved and the session starts. If an **Error** row at stage **Session** (for example `no_cp_access` or `user_not_saved`) stands directly above it, both belong to the same attempt and the person was **not** signed in. Seeing `existing_unchanged` when you expected fields to update means
+on login is off, nothing changed). A **Provisioning** row records the *decision* (outcome **Accepted**), written before the account is saved and the session starts. A login that worked has a **Signed in** row at stage **Session** directly above it (`signed_in`). If an **Error** row at stage **Session** (for example `no_cp_access` or `user_not_saved`) stands there instead, both belong to the same attempt and the person was **not** signed in. Seeing `existing_unchanged` when you expected fields to update means
 **Update accounts on every login** is off.
 
 **One person suddenly refused with `linking_disabled`, and nobody else.** This is the price of the
@@ -254,8 +256,8 @@ Warnings appear at the top of the plugin settings and **never block a save** —
 a safety net that has already fired, and a guard that stops you saving the configuration it just
 corrected is a guard that locks you out.
 
-**"The `oidcClientSecret` field points at environment variable `$…`, which is not set, or is set to
-an empty value."** The field looks filled in — it holds `$KEYWAY_OIDC_SECRET` — but there is nothing
+**"The "Client secret" field points at environment variable `$…`, which is not set, or is set to
+an empty value."** (the same warning names **SP private key** for that field) The field looks filled in — it holds `$KEYWAY_OIDC_SECRET` — but there is nothing
 behind that name on the server. **The warning names the variable deliberately**, because the actual
 fault is in the server environment, not on this page, and the person who has to fix it needs the
 name; the field-level error alone sits somewhere the administrator may never scroll to. Until it

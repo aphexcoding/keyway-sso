@@ -122,6 +122,55 @@ return [
         Assert::same(false, $event->decision()['grantsAdmin']);
     },
 
+    // The decision row above is written when the login is ACCEPTED - before the account is
+    // saved and before the session starts. This is the row that means "signed in".
+    'a started session is recorded at the session stage, as a success' => static function () use ($recorder): void {
+        $sink = new CollectingSink();
+
+        $event = $recorder($sink)->recordSignedIn(
+            'oidc',
+            'signed_in',
+            'Signed in.',
+            'https://idp.example.com',
+            'jan@example.com',
+            42
+        );
+
+        Assert::same(1, count($sink->events));
+        Assert::same(LoginOutcome::Success, $event->outcome);
+        Assert::same(DiagnosticEvent::STAGE_SESSION, $event->stage);
+        Assert::same('signed_in', $event->reasonCode);
+        Assert::same('oidc', $event->protocol);
+        Assert::same('https://idp.example.com', $event->issuer, 'found by the same search as the rest of the attempt');
+        Assert::notContains('jan@', $event->subject, 'the subject is masked like every other');
+        Assert::same(Masker::maskValue('jan@example.com'), $event->subject);
+        Assert::same(42, $event->decision()['userId']);
+        Assert::same([], $event->attributes(), 'the attributes are on the decision row, not repeated here');
+    },
+
+    // The session stage has no payload any more, but it knows whose attempt it was. Its red row
+    // is the one that says the person never got in, so a search by subject must find it.
+    'a failure without a payload can still say whose attempt it was' => static function () use ($recorder): void {
+        $sink = new CollectingSink();
+
+        $event = $recorder($sink)->recordFailure(
+            'oidc',
+            DiagnosticEvent::STAGE_SESSION,
+            'no_cp_access',
+            'The account was provisioned but has no "accessCp" permission.',
+            null,
+            'https://idp.example.com',
+            'jan@example.com'
+        );
+
+        Assert::same('https://idp.example.com', $event->issuer);
+        Assert::same(Masker::maskValue('jan@example.com'), $event->subject);
+
+        $payload = new IdentityPayload('from-payload', [], 'https://payload.example.com');
+        $both = $recorder($sink)->recordFailure('oidc', 'state', 'x', 'y', $payload, 'https://ignored.example', 'ignored');
+        Assert::same('https://payload.example.com', $both->issuer, 'a payload, when there is one, wins');
+    },
+
     'a denied login is recorded as denied, with the reason' => static function () use ($recorder): void {
         $sink = new CollectingSink();
         $payload = new IdentityPayload('jan@evil.com', ['email' => 'jan@evil.com']);

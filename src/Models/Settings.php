@@ -160,6 +160,17 @@ class Settings extends Model
     private const ENV_AWARE = ['samlSpPrivateKey', 'oidcClientSecret'];
 
     /**
+     * What the settings screen calls each of those fields. A warning that names
+     * `oidcClientSecret` sends the administrator looking for a label that is not on the page.
+     *
+     * @var array<string, string>
+     */
+    private const ENV_AWARE_LABELS = [
+        'samlSpPrivateKey' => 'SP private key',
+        'oidcClientSecret' => 'Client secret',
+    ];
+
+    /**
      * Settings as the translator should see them: env references resolved to their values.
      *
      * This is the only place in the plugin that knows environment variables exist. The
@@ -370,10 +381,10 @@ class Settings extends Model
         // Whoever has to fix it needs the variable name, so it goes at the top of the screen.
         foreach ($this->unresolvedEnvReferences() as $name) {
             $warnings[] = sprintf(
-                'The %s field points at environment variable %s, which is not set, or is set to '
+                'The "%s" field points at environment variable %s, which is not set, or is set to '
                 . 'an empty value. Set it on the server, or clear the field - single sign-on '
                 . 'stays off until it resolves.',
-                $name,
+                self::ENV_AWARE_LABELS[$name] ?? $name,
                 (string)$this->$name
             );
         }

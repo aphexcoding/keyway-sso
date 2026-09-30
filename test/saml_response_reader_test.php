@@ -58,7 +58,7 @@ $makeReader = static function (array $options = []) use ($now): array {
         (string)($options['spEntityId'] ?? SamlFixtures::SP_ENTITY_ID),
         (string)($options['acsUrl'] ?? SamlFixtures::ACS_URL),
         SamlFixtures::IDP_SSO_URL,
-        null,
+        isset($options['spPrivateKey']) ? (string)$options['spPrivateKey'] : null,
         (int)($options['skew'] ?? 60)
     );
 
@@ -518,6 +518,13 @@ return [
             Assert::contains('someone-else.example.test', $reader->detail());
         },
 
+    'the reader offers its detail to LoginFlow, which is how it reaches the diagnostics row' =>
+        static function () use ($makeReader): void {
+            [$reader] = $makeReader();
+
+            Assert::true($reader instanceof \Keyway\Sso\Core\Port\RejectionDetailInterface);
+        },
+
     'A8: a malformed body is a reason code, not a stack trace' =>
         static function () use ($makeReader): void {
             [$reader, $relayState] = $makeReader();
@@ -532,6 +539,122 @@ return [
 
             /** @var IdentityReaderException $error */
             Assert::same(IdentityReaderException::MALFORMED_RESPONSE, $error->reasonCode());
+        },
+
+    // ---------------------------------------------------------------- B11 encrypted assertions
+    //
+    // Until 1.0.2 this path had no test at all and the documentation said so ("unverified").
+    // The fixtures are encrypted for real (SamlFixtures::encryptAssertion): AES-256-CBC for the
+    // assertion, RSA-OAEP for the session key, to the service provider's certificate.
+    'B11: an encrypted, signed assertion is decrypted and then read like any other' =>
+        static function () use ($makeReader, $now): void {
+            [$reader, $relayState] = $makeReader(['spPrivateKey' => SamlFixtures::spKey()]);
+
+            $payload = $reader->read([
+                'SAMLResponse' => SamlFixtures::encryptAssertion(
+                    SamlFixtures::response(['now' => $now]),
+                    SamlFixtures::spCert()
+                ),
+                'RelayState' => $relayState,
+            ]);
+
+            Assert::true($payload instanceof IdentityPayload);
+            Assert::same('alice@example.test', $payload->nameId());
+            Assert::same(SamlFixtures::IDP_ENTITY_ID, $payload->issuer());
+            Assert::sameList(['Staff', 'Admins'], $payload->values('Groups'), 'attributes come out of the ciphertext');
+        },
+
+    'B11: the fixture really is encrypted - the plaintext assertion is not in the message' =>
+        static function () use ($now): void {
+            $xml = (string)base64_decode(SamlFixtures::encryptAssertion(
+                SamlFixtures::response(['now' => $now]),
+                SamlFixtures::spCert()
+            ), true);
+
+            Assert::contains('EncryptedAssertion', $xml);
+            Assert::contains('EncryptedKey', $xml);
+            Assert::notContains('alice@example.test', $xml, 'the subject is inside the ciphertext');
+            Assert::notContains('<saml:Assertion', $xml);
+        },
+
+    'B11: an encrypted assertion with no SP private key configured is refused, and says why' =>
+        static function () use ($makeReader, $now): void {
+            [$reader, $relayState] = $makeReader();
+
+            $error = Assert::throws(
+                IdentityReaderException::class,
+                static fn () => $reader->read([
+                    'SAMLResponse' => SamlFixtures::encryptAssertion(
+                        SamlFixtures::response(['now' => $now]),
+                        SamlFixtures::spCert()
+                    ),
+                    'RelayState' => $relayState,
+                ])
+            );
+
+            /** @var IdentityReaderException $error */
+            Assert::same(IdentityReaderException::DECRYPTION_FAILED, $error->reasonCode());
+            Assert::contains('no SP private key is configured', $reader->detail());
+        },
+
+    'B11: an assertion encrypted to somebody else\'s certificate is refused' =>
+        static function () use ($makeReader, $now): void {
+            [$reader, $relayState] = $makeReader(['spPrivateKey' => SamlFixtures::spKey()]);
+
+            $error = Assert::throws(
+                IdentityReaderException::class,
+                static fn () => $reader->read([
+                    'SAMLResponse' => SamlFixtures::encryptAssertion(
+                        SamlFixtures::response(['now' => $now]),
+                        SamlFixtures::foreignCert()
+                    ),
+                    'RelayState' => $relayState,
+                ])
+            );
+
+            /** @var IdentityReaderException $error */
+            Assert::same(IdentityReaderException::DECRYPTION_FAILED, $error->reasonCode());
+            Assert::notContains('BEGIN', $reader->detail(), 'no key material in the detail');
+        },
+
+    // "Decryption success is not validation" (B11). Anyone can encrypt to our certificate - it
+    // is public by design - so the ciphertext proves nothing about who wrote the assertion.
+    'B11: an unsigned assertion is refused even though it decrypted' =>
+        static function () use ($makeReader, $now): void {
+            [$reader, $relayState] = $makeReader(['spPrivateKey' => SamlFixtures::spKey()]);
+
+            $error = Assert::throws(
+                IdentityReaderException::class,
+                static fn () => $reader->read([
+                    'SAMLResponse' => SamlFixtures::encryptAssertion(
+                        SamlFixtures::response(['now' => $now, 'signAssertion' => false]),
+                        SamlFixtures::spCert()
+                    ),
+                    'RelayState' => $relayState,
+                ])
+            );
+
+            /** @var IdentityReaderException $error */
+            Assert::same(IdentityReaderException::SIGNATURE_COVERAGE, $error->reasonCode());
+        },
+
+    'B11: an assertion signed by somebody else is refused even though it decrypted' =>
+        static function () use ($makeReader, $now): void {
+            [$reader, $relayState] = $makeReader(['spPrivateKey' => SamlFixtures::spKey()]);
+
+            $error = Assert::throws(
+                IdentityReaderException::class,
+                static fn () => $reader->read([
+                    'SAMLResponse' => SamlFixtures::encryptAssertion(
+                        SamlFixtures::response(['now' => $now, 'signWith' => 'foreign']),
+                        SamlFixtures::spCert()
+                    ),
+                    'RelayState' => $relayState,
+                ])
+            );
+
+            /** @var IdentityReaderException $error */
+            Assert::same(IdentityReaderException::SIGNATURE_INVALID, $error->reasonCode());
         },
 
     // ---------------------------------------------------------------- A3 configuration

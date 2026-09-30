@@ -190,8 +190,9 @@ first.
   request will reject every login; each guide says where that switch lives.
 * SAML assertions **must** be signed; that check cannot be turned off. Time checks cannot be
   turned off either — only their tolerance, up to 120 seconds.
-* Encrypted assertions are implemented (**SP private key**) but **unverified** — not covered by
-  an automated test and not run against a live provider, so test before relying on them. The
+* Encrypted assertions are implemented (**SP private key**) and, since 1.0.2, covered by automated
+  tests with real encryption (AES-256-CBC content, RSA-OAEP key transport) — but they have **not
+  been run against a live provider**, so test with yours before relying on them. The
   plugin also has no field for an SP
   *certificate*, so the metadata document carries no key material: if you encrypt assertions, the
   matching certificate has to reach your provider by another route.
