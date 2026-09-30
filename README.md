@@ -65,4 +65,4 @@ against a live tenant and what has not. Read it before you plan a rollout.
 
 ## License
 
-Commercial software under the Craft License with additional terms. See [LICENSE.md](LICENSE.md).
+Commercial software under the Craft License. See [LICENSE.md](LICENSE.md).

@@ -1,5 +1,12 @@
 # Release Notes for Keyway SSO
 
+## 1.0.1 - 2026-09-30
+
+### Changed
+
+- `LICENSE.md` is now the unmodified Craft License. The "Additional Terms" section that 1.0.0
+  appended to it has been removed. No code changes.
+
 ## 1.0.0 - 2026-09-30
 
 First public release. Keyway SSO signs people into the Craft CMS 5 control panel with your own

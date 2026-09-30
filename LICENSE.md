@@ -40,26 +40,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER
 LIABILITY, INCLUDING SPECIAL, INCIDENTAL AND CONSEQUENTIAL DAMAGES, WHETHER IN
 AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
-## Additional Terms
-
-The following terms supplement the Craft License above.
-
-1. **Limitation of liability.** If and to the extent the exclusion of liability
-   above is held unenforceable, the total aggregate liability of the copyright
-   holder arising out of or in connection with the Software shall not exceed
-   the amount actually paid by the licensee for the license to the Software
-   during the twelve (12) months preceding the event giving rise to the claim.
-
-2. **Mandatory law.** Nothing in this license excludes or limits any liability,
-   or any right of a consumer, that cannot be excluded or limited under
-   applicable law.
-
-3. **Governing law and jurisdiction.** This license is governed by the laws of
-   the Republic of Poland, excluding its conflict-of-laws rules. Any dispute
-   arising out of or in connection with this license shall be resolved by the
-   courts competent for the copyright holder's place of business, without
-   prejudice to any mandatory rules on jurisdiction protecting consumers.
-
-4. **Severability.** If any provision of this license is held invalid or
-   unenforceable, the remaining provisions remain in full force and effect.
