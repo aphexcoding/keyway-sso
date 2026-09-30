@@ -71,8 +71,8 @@ return [
 
             Assert::same(true, $table[CURLOPT_SSL_VERIFYPEER], 'peer verification');
             Assert::same(2, $table[CURLOPT_SSL_VERIFYHOST], 'host verification');
-            Assert::same('https', $table[CURLOPT_PROTOCOLS_STR]);
-            Assert::same('https', $table[CURLOPT_REDIR_PROTOCOLS_STR]);
+            Assert::same(CURLPROTO_HTTPS, $table[CURLOPT_PROTOCOLS]);
+            Assert::same(CURLPROTO_HTTPS, $table[CURLOPT_REDIR_PROTOCOLS]);
             Assert::same(false, $table[CURLOPT_FOLLOWLOCATION], 'a redirect is an SSRF pivot');
             Assert::same(0, $table[CURLOPT_MAXREDIRS]);
             Assert::true(is_callable($table[CURLOPT_WRITEFUNCTION]), 'the size cap lives here');

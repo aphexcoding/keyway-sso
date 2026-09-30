@@ -22,12 +22,20 @@ do nothing and say so. Details: [`docs/README.md`](docs/README.md).
 
 ## Installation
 
-From the project root of your Craft site:
+**From the Plugin Store (the usual route):** in the control panel open **Plugin Store**, search for
+"Keyway SSO" and press **Install**. Craft downloads the package and runs the installation.
+
+**With Composer,** from the project root of your Craft site:
 
 ```bash
 composer require aphexcoding/keyway-sso
 php craft plugin/install keyway-sso
 ```
+
+`composer require` only works if Composer can find the package: through Craft's own repository
+(`https://composer.craftcms.com`, which Craft adds to your `composer.json` the first time anything
+is installed from the control panel) or through Packagist, if the package is listed there. If
+Composer answers that the package could not be found, use the Plugin Store route.
 
 Then open **Settings → Plugins → Keyway SSO**. Until you choose a protocol there, the login
 screen looks exactly as it did before the plugin was installed — **Protocol** starts at
@@ -47,8 +55,9 @@ Full deployment documentation is in **[`docs/`](docs/README.md)**:
 | [`docs/entra-id.md`](docs/entra-id.md) | Microsoft Entra ID — OpenID Connect |
 | [`docs/troubleshooting.md`](docs/troubleshooting.md) | Every refusal code the plugin can produce, and what to do about it |
 
-Any other SAML 2.0 or OpenID Connect provider works the same way — the guides differ only in
-where each value is found in the provider's console.
+The settings are the same for any other SAML 2.0 or OpenID Connect provider — the guides differ
+only in where each value is found in the provider's console — but only Keycloak and Okta have
+been tested with SAML, and OpenID Connect has been run end to end with Keycloak only.
 
 **Verification status** is stated per provider in
 [`docs/README.md`](docs/README.md#choose-your-provider), including what has been exercised

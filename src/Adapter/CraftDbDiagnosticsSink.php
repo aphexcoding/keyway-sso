@@ -271,7 +271,9 @@ final class CraftDbDiagnosticsSink implements DiagnosticsSinkInterface, Diagnost
         }
 
         if ($query->protocol() !== null) {
-            $builder->andWhere(['protocol' => $query->protocol()]);
+            // The stored values, not the filter value: a SAML login row says `saml2`, the
+            // filter says `saml`. See DiagnosticsQuery::STORED_PROTOCOLS.
+            $builder->andWhere(['protocol' => $query->storedProtocols()]);
         }
 
         $search = $query->search();

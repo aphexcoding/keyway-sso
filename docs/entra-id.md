@@ -9,8 +9,9 @@
 > Where a portal detail could not be pinned down, the step says **what you need to achieve** rather
 > than which button to click.
 >
-> The plugin's OIDC layer is exercised end to end against Keycloak. If you want a provider this
-> project has actually driven, see [keycloak.md](keycloak.md).
+> The plugin's OIDC layer has been run end to end against Keycloak only (30 September 2026 — see
+> [keycloak.md](keycloak.md)); that says nothing about Entra ID's own behaviour. If you want a
+> provider this project has actually driven, use Keycloak, or SAML with [Okta](okta.md).
 
 Related pages: [overview](README.md) · [Keycloak](keycloak.md) · [Okta](okta.md) ·
 [troubleshooting](troubleshooting.md).
@@ -292,7 +293,7 @@ Full detail: [troubleshooting → Locked out of the control panel](troubleshooti
 Plugins → Keyway SSO → **Open sign-in diagnostics**. A green **Signed in** row at stage
 **Provisioning** with reason `jit_create` means a new Craft account was created;
 `update_on_login` means an existing one matched and was updated; `existing_unchanged` means it
-matched and nothing was changed. Expand **Details** and check **Mapped to** — this is where you
+matched and nothing was changed. A **Provisioning** row records the *decision*, written before the account is saved and the session starts. If an **Error** row at stage **Session** (for example `no_cp_access` or `user_not_saved`) stands directly above it, both belong to the same attempt and the person was **not** signed in. Expand **Details** and check **Mapped to** — this is where you
 confirm that the Craft groups are the ones you intended, and it is worth doing on day one rather
 than after somebody has the wrong permissions.
 

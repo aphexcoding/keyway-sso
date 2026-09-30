@@ -26,7 +26,7 @@ exactly where a failing login has to be diagnosable.
 |---|---|
 | Time | When the attempt was handled |
 | Outcome | **Signed in** (green) · **Refused** (orange) · **Error** (red) · **Notice** (blue) |
-| Protocol | `SAML 2.0`, `OIDC`, or a raw value such as `unknown` when the attempt failed before the connection could be identified |
+| Protocol | `SAML 2.0`, `OpenID Connect`, or a raw value such as `unknown` when the attempt failed before the connection could be identified |
 | Stage | `Protocol`, `Login state`, `Attributes`, `Groups`, `Provisioning`, `Session` |
 | Reason | The **reason code**, shown raw in `<code>` — this is the identifier to search for and to quote |
 | Subject | The account identifier from the provider, masked (`j***n@acme.example`) |
@@ -48,7 +48,9 @@ received**, **Mapped to**, **Decision**, and the **Entry ID** (quote it if you c
 3. **Reason** is the exact cause. Look it up in section 3.
 
 **Filters.** Outcome, Protocol and a free-text **Search** that matches the reason code, the masked
-subject, the issuer and the entry ID. The filtered URL is the whole state of the screen, so it can
+subject, the issuer and the entry ID. Search looks at the **Reason** column, not at the message: for
+a refused provider response search for `identity_rejected` — the specific code (`signature_invalid`
+and the like) is in **Details**. Rows with protocol `unknown` appear only under **All protocols**. The filtered URL is the whole state of the screen, so it can
 be bookmarked and pasted into a ticket. Page size defaults to 50 rows and is capped at 200.
 
 **Three empty states, three different meanings:**
@@ -149,7 +151,7 @@ Codes that appear inside `identity_rejected`:
 |---|---|---|
 | `signature_invalid` | The signature does not verify against the configured IdP certificate, or the JWT signature failed. | Re-copy the IdP signing certificate / check that the provider rotated its key. |
 | `signature_coverage` | SAML only: the signature does not cover the assertion that was parsed — missing or duplicate assertion ID, no single `ds:Signature` child, a `Reference` pointing elsewhere, or no enveloped-signature transform. | A provider or proxy is re-wrapping the assertion. Do not relax anything; investigate what modifies the response. |
-| `malformed_response` | The document could not be parsed or is structurally wrong: no `SAMLResponse` field, bad base64, not well-formed XML, a token response that is not JSON, no `id_token`, an unusable `access_token`, a non-Bearer token type, an unreadable `aud`, a missing `iat`. | Read the message — it names the specific defect. |
+| `malformed_response` | The document could not be parsed or is structurally wrong: no `SAMLResponse` field, bad base64, not well-formed XML, a token response that is not JSON, no `id_token`, an unusable `access_token`, a non-Bearer token type, an unreadable `aud`, a missing `iat`. For OpenID Connect this is also what a **wrong client secret** looks like: the provider's token endpoint answers with an error instead of tokens. | For SAML, read the message. For OpenID Connect the message is generic and does not name the defect — check **Client secret** (and the environment variable behind it) first, then the provider's own log. |
 | `issuer_mismatch` | The issuer in the response (or in the discovery document) is not the configured one, compared byte for byte. | Copy the issuer exactly as the provider publishes it, including or excluding a trailing slash. |
 | `audience_mismatch` | SAML: the `AudienceRestriction` does not name this SP entity ID. OIDC: `aud` does not contain the client ID, or there are several audiences and no `azp` naming this client. | Make the SP entity ID / client ID identical on both sides. |
 | `assertion_expired` | A time window did not check out: SAML `NotBefore`/`NotOnOrAfter`, or OIDC `exp` / `iat` in the future / id token older than the accepted login window (5 minutes) / `nbf`. | Check clock sync on both machines first. Clock skew tolerance is configurable up to 120 seconds; the checks themselves cannot be turned off. |
@@ -194,9 +196,9 @@ the Craft settings screen, not at the provider.
 | `account_locked` | The account is locked after repeated failed sign-in attempts. SSO does not clear a lockout. | Unlock it in the control panel. |
 | `identity_link_unavailable` | **Notice, not a refusal**, and the one to read before blaming the identity provider: the record of which accounts single sign-on created could not be read, so the login was decided as if the account had not been created here. The refusal itself is then reported as `linking_disabled`. The message says which of the two it is — *the plugin's table is missing* (the migrations have not run on this site) or *could not be read*, followed by the **class** of the error. The database's own text is deliberately **not** stored: it would carry the SQL statement into a screen support staff read. | Run the pending database updates (`php craft up`), then have them sign in again. If this appears on a site that has been running for a while, that is the expected cause: the table arrived in a plugin update and `craft up` had not been run since. If the table is there, look in Craft's log for the driver's message. |
 
-Successful provisioning rows use `jit_create` (a new account was created), `update_on_login` (an
-existing account matched and mapped values were applied) and `existing_unchanged` (matched, sync on
-login is off, nothing changed). Seeing `existing_unchanged` when you expected fields to update means
+Successful provisioning rows use `jit_create` (a new account is to be created), `update_on_login`
+(an existing account matched and mapped values are applied) and `existing_unchanged` (matched, sync
+on login is off, nothing changed). A **Provisioning** row records the *decision*, written before the account is saved and the session starts. If an **Error** row at stage **Session** (for example `no_cp_access` or `user_not_saved`) stands directly above it, both belong to the same attempt and the person was **not** signed in. Seeing `existing_unchanged` when you expected fields to update means
 **Update accounts on every login** is off.
 
 **One person suddenly refused with `linking_disabled`, and nobody else.** This is the price of the

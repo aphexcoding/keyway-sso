@@ -5,7 +5,8 @@ Okta tenant on 17 September 2026** (Integrator Free Plan, fresh Craft 5.11 insta
 settings): the first sign-in created the account just in time with the mapped group, and the
 second one updated it and reached the control panel.
 **OpenID Connect with Okta has not been checked** — the OIDC side of the plugin is written to the
-specification and exercised against a different provider, so if you go that way, treat it as
+specification and has been run end to end against a different provider (Keycloak) only, so if you
+go that way, treat it as
 unverified and test it carefully before anyone depends on it.
 
 Okta's admin console changes wording from time to time. Where a name below does not match what
@@ -84,7 +85,8 @@ name. Then work through its SAML settings:
 
 Paste the two addresses by hand here and then compare them character for character — that is what
 both sides do with them. *(If your Okta edition offers an import of service-provider metadata, our
-metadata document carries the same entity ID and ACS URL and can replace the retyping — but it
+metadata document carries the same entity ID and ACS URL and can replace the retyping — we have
+not tested that import — but it
 exists only once the complete configuration has been saved in Step 3, so that route means
 finishing Step 3 first and re-checking this application afterwards.)*
 
@@ -232,7 +234,9 @@ domain.
    `Session`), reason code, subject, issuer, and a **Details** panel with the attributes received,
    what they mapped to, and the decision taken. You can filter by outcome, by protocol and by a
    search term.
-4. Reason codes worth recognising on a first attempt with Okta:
+4. Reason codes worth recognising on a first attempt with Okta. When Okta's response itself is
+   refused, the **Reason** column reads `identity_rejected` and the specific code stands in round
+   brackets at the end of the message under **Details**:
    * `destination_mismatch`, `confirmation_invalid` — the Recipient/Destination addresses do not
      equal **ACS URL** exactly (Step 2, the checkbox).
    * `audience_mismatch` — Okta's *Audience URI* is not what **SP entity ID** holds.
@@ -315,7 +319,8 @@ provider Single Logout has been exercised against end to end is Keycloak — see
   signed request, every login fails at Okta.
 * **OpenID Connect with Okta is unverified.** The fields exist and the protocol is implemented,
   but this combination has not been tested; the ACS-based SAML path above is the supported one.
-* **Encrypted assertions** are supported by the plugin (**SP private key**), but there is no field
+* **Encrypted assertions** are implemented in the plugin (**SP private key**) but **unverified**
+  — not covered by an automated test and not run against a live Okta tenant. There is also no field
   for an SP *certificate*, so the metadata document contains no key material. If you turn on
   assertion encryption in Okta, the certificate matching your private key has to get there by
   another route.

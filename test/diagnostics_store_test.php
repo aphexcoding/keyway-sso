@@ -362,6 +362,50 @@ $sink = static function (
 };
 
 return $cases + [
+    // THE REGRESSION THIS PINS: the filter offered `saml`, every SAML login row was written as
+    // `saml2`, and "Protocol: SAML 2.0" answered "No entries match the current filters" on a
+    // table full of SAML logins. The list test above could not see it - it compares the filter
+    // to the SETTINGS vocabulary, and the rows are not written in that vocabulary. So this one
+    // starts from the writers: every identity reader the plugin ships (found on disk, so a
+    // third protocol is included the day its file appears) plus the logout flow, asked for the
+    // value they really stamp on a row, and then the real sink is asked to filter for it.
+    'every protocol value a row is written with is selected by a filter option' => static function ($_ = null) use ($sink): void {
+        $written = [\Keyway\Sso\Core\Logout\InboundLogoutFlow::PROTOCOL => 'InboundLogoutFlow'];
+
+        $files = glob(dirname(__DIR__) . '/src/Protocol/*/*.php') ?: [];
+        foreach ($files as $file) {
+            $class = 'Keyway\\Sso\\Protocol\\' . basename(dirname($file)) . '\\' . basename($file, '.php');
+            if (!class_exists($class) || !is_subclass_of($class, \Keyway\Sso\Core\Port\IdentityReaderInterface::class)) {
+                continue;
+            }
+
+            // protocol() is a constant answer; the constructor wants a whole connection.
+            $reader = (new \ReflectionClass($class))->newInstanceWithoutConstructor();
+            $written[$reader->protocol()] = $class;
+        }
+
+        Assert::true(count($written) >= 3, 'SAML reader, OIDC reader and logout were all found: ' . json_encode($written));
+        Assert::sameList(DiagnosticsQuery::PROTOCOLS, array_keys(DiagnosticsQuery::STORED_PROTOCOLS));
+
+        foreach ($written as $value => $writer) {
+            $options = array_keys(array_filter(
+                DiagnosticsQuery::STORED_PROTOCOLS,
+                static fn(array $stored): bool => in_array($value, $stored, true)
+            ));
+            Assert::same(1, count($options), sprintf('`%s` (written by %s) belongs to exactly one filter option', $value, $writer));
+
+            $db = \Keyway\Sso\Test\Support\FakeCraftDbConnection::make();
+            $sink($db, new \Keyway\Sso\Test\Support\CollectingSink(), new \Keyway\Sso\Test\Support\FixedClock())
+                ->recent(DiagnosticsQuery::fromInput(null, $options[0], null, null, null));
+
+            Assert::contains('`protocol`', (string)$db->lastSql());
+            Assert::true(
+                in_array($value, $db->lastParams(), true),
+                sprintf('filtering for `%s` asks the table for `%s` rows: %s', $options[0], $value, json_encode($db->lastParams()))
+            );
+        }
+    },
+
     'one login writes one row, and the row reads back as itself' => static function () use ($event, $sink): void {
         $db = \Keyway\Sso\Test\Support\FakeCraftDbConnection::make();
         $fallback = new \Keyway\Sso\Test\Support\CollectingSink();

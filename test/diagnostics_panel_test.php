@@ -666,7 +666,7 @@ return [
             Assert::contains('<code>signed_in</code>', $html, 'the code support asks for, verbatim');
             Assert::contains('status green', $html, 'signed in reads as signed in');
             Assert::contains('Signed in', $html, 'and says so in words, not only in colour');
-            Assert::contains('OIDC', $html);
+            Assert::contains('OpenID Connect', $html, 'a label, not the stored identifier');
             Assert::contains('2025-09', $html, 'the timestamp went through a date formatter');
 
             // The nested structures, rendered rather than dumped.
@@ -823,5 +823,25 @@ return [
             // And is absent where Craft would not have used it: no redundant `?p=` on an
             // install with clean URLs.
             Assert::notContains('name="p"', $render($screen()), 'clean URLs get a clean form');
+        },
+
+    // The screen shows raw reason codes and, until this link existed, nothing in the product said
+    // where they are explained. It has to be there in EVERY state - the administrator who most
+    // needs the troubleshooting page is the one looking at "could not be read" or at a refusal.
+    'every state of the screen links to the troubleshooting guide, in a new tab' =>
+        static function () use ($render, $screen, $row): void {
+            $link = '<a href="https://keyway.aphexcoding.tech/craft-cms-sso-not-working"'
+                . ' target="_blank" rel="noopener">';
+
+            $states = [
+                'empty' => $screen(),
+                'unavailable' => $screen(['unavailable' => true]),
+                'filtered, no match' => $screen(['filtered' => true, 'outcome' => 'denied']),
+                'with rows' => $screen(['rows' => [$row()], 'total' => 1]),
+            ];
+
+            foreach ($states as $name => $variables) {
+                Assert::same(1, substr_count($render($variables), $link), $name . ': one link, no more');
+            }
         },
 ];

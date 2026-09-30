@@ -44,17 +44,26 @@ narrower warning above about group mapping.
 
 ## Installation
 
-From the project root of your Craft site:
+**From the Plugin Store (the usual route):** in the control panel open **Plugin Store**, search for
+"Keyway SSO" and press **Install**. Craft downloads the package and runs the installation.
+
+**With Composer,** from the project root of your Craft site:
 
 ```bash
 composer require aphexcoding/keyway-sso
 php craft plugin/install keyway-sso
 ```
 
+`composer require` only works if Composer can find the package: through Craft's own repository
+(`https://composer.craftcms.com`, which Craft adds to your `composer.json` the first time anything
+is installed from the control panel) or through Packagist, if the package is listed there. If
+Composer answers that the package could not be found, use the Plugin Store route.
+
 The plugin handle is `keyway-sso`. Installing it creates two tables: the one behind the
 diagnostics screen, and the record of which accounts single sign-on created (without which a
-just-in-time account is refused on its second login). If you install through **Settings →
-Plugins** in the control panel instead, Craft runs the same migration for you.
+just-in-time account is refused on its second login). Installing from the Plugin Store, or
+pressing **Install** under **Settings → Plugins** for a package Composer has already downloaded,
+runs the same migration for you.
 
 **After any later update, run `php craft up`.** It is not optional housekeeping: a site that
 already had the plugin installed gets new tables only that way, and the one added in schema
@@ -70,12 +79,13 @@ installed — **Protocol** starts at `Disabled (password login only)`.
 
 | Provider | Protocols covered by the guide | Guide | Verification status |
 |---|---|---|---|
-| Keycloak | SAML 2.0 and OpenID Connect | [keycloak.md](keycloak.md) | **SAML verified end to end on 17 September 2026** against a live Keycloak 26.0 realm and a live Craft install: sign-in, attribute and group mapping, account creation, and IdP-initiated Single Logout (step 7) — which is SAML only and one way (signing out of Craft ends nothing at the provider), opt-in (it needs the provider's logout URL and an SP private key before it does anything), and will not work with Okta, which will not send such a request after an ordinary Okta sign-out. **OpenID Connect has not been run end to end**; for it a smoke check (`bin/smoke-keycloak.php`) reads a real realm's discovery document and JWKS and verifies a real id token's key selection and signature — but not the HTTPS transport (the scheme is rewritten before the document is handed over) and not the full id-token reader. |
+| Keycloak | SAML 2.0 and OpenID Connect | [keycloak.md](keycloak.md) | **SAML verified end to end on 17 September 2026** against a live Keycloak 26.0 realm and a live Craft install: sign-in, attribute and group mapping, account creation, and IdP-initiated Single Logout (step 7) — which is SAML only and one way (signing out of Craft ends nothing at the provider), opt-in (it needs the provider's logout URL and an SP private key before it does anything), and will not work with Okta, which will not send such a request after an ordinary Okta sign-out. **OpenID Connect verified end to end on 30 September 2026 against a Keycloak 26.0 realm and a live Craft 5.11 install on PHP 8.2, over HTTPS with certificate verification: Authorization Code with PKCE (`S256`), a confidential and a public client, `RS256` id tokens, first sign-in (account created with mapped fields and group), repeat sign-in, and refusals (wrong client secret, domain not allowed, no matching group). Not covered: `ES256` id tokens, key rotation, and any OpenID Connect provider other than Keycloak.** |
 | Okta | SAML 2.0 | [okta.md](okta.md) | **SAML verified end to end on 17 September 2026** against a live Okta tenant (Integrator Free Plan) and a fresh Craft 5.11 install on default settings: the first sign-in created the account just in time with the mapped group, and the second one updated it and reached the control panel. **Single Logout will not work with Okta** — by Okta's own documentation (read 17 September 2026) Okta will not send a logout request to the application after an ordinary Okta sign-out; that half was not exercised on the live tenant. OIDC with Okta has not been checked. |
 | Microsoft Entra ID | OpenID Connect | [entra-id.md](entra-id.md) | **Guide provided, not yet verified against a live tenant.** |
 
-Any other SAML 2.0 or OpenID Connect provider works the same way — the three guides differ only
-in where each value is found in the provider's console.
+The settings are the same for any other SAML 2.0 or OpenID Connect provider — the three guides
+differ only in where each value is found in the provider's console — but only Keycloak and Okta
+have been tested with SAML, and OpenID Connect has been run end to end with Keycloak only.
 
 ---
 
@@ -159,7 +169,7 @@ naming the missing variable at the top of the page, and the field itself carries
    login only until it is fixed.
 2. Open **Open sign-in diagnostics**. Every attempt is recorded with the stage it reached
    (`protocol`, `state`, `attributes`, `groups`, `provisioning`, `session`), the outcome
-   (`success`, `denied`, `error`, `notice`), a machine reason code such as `signature_invalid` or
+   (`success`, `denied`, `error`, `notice`), a machine reason code such as `domain_not_allowed` or
    `state_rejected`, and — under **Details** — the attributes that arrived, what they mapped to,
    and the decision that was made. Values from the provider are masked when they are written.
 3. Look the reason code up in [troubleshooting.md](troubleshooting.md).
@@ -180,7 +190,9 @@ first.
   request will reject every login; each guide says where that switch lives.
 * SAML assertions **must** be signed; that check cannot be turned off. Time checks cannot be
   turned off either — only their tolerance, up to 120 seconds.
-* Encrypted assertions are supported (**SP private key**), but the plugin has no field for an SP
+* Encrypted assertions are implemented (**SP private key**) but **unverified** — not covered by
+  an automated test and not run against a live provider, so test before relying on them. The
+  plugin also has no field for an SP
   *certificate*, so the metadata document carries no key material: if you encrypt assertions, the
   matching certificate has to reach your provider by another route.
 * OpenID Connect requires `https` for both the **Issuer** and the **Redirect URI**, with no

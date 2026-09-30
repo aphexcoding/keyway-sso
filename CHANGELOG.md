@@ -1,6 +1,6 @@
 # Release Notes for Keyway SSO
 
-## 1.0.0 - 2026-09-27
+## 1.0.0 - 2026-09-30
 
 First public release. Keyway SSO signs people into the Craft CMS 5 control panel with your own
 identity provider over SAML 2.0 or OpenID Connect, maps the attributes and groups it receives onto
@@ -21,12 +21,12 @@ panel.
 ### Added
 
 - **SAML 2.0 sign-in**, HTTP-POST binding for the assertion. Signed assertions are required and
-  that check cannot be switched off; encrypted assertions are supported; the service-provider
+  that check cannot be switched off; encrypted assertions are implemented but unverified (see
+  "Known limits"); the service-provider
   metadata document is served from your own site.
-- **OpenID Connect sign-in** — **not yet run end to end in a browser** (see "Verified against live
-  systems" below; the automated checks cover neither the HTTPS transport nor the full id-token
-  reader): Authorization Code with PKCE (`S256`, always), discovery, `RS256` and `ES256` id-token
-  signatures. `https` is required for both the issuer and the redirect URI.
+- **OpenID Connect sign-in** — run end to end with Keycloak only (see "Verified against live
+  systems" below): Authorization Code with PKCE (`S256`, always), discovery, `RS256` and `ES256`
+  id-token signatures (`ES256` is covered by automated tests only). `https` is required for both the issuer and the redirect URI.
 - **Attribute and group mapping**: provider attributes onto `email`, `username`, `firstName`,
   `lastName`, `fullName` or any custom field; provider groups onto Craft group handles by exact,
   prefix or suffix match, including a "refuse a sign-in that matches no group" switch.
@@ -40,7 +40,7 @@ panel.
   or that has no local Craft password — as none of the accounts this plugin creates do — is not a
   way back in, and the guard cannot tell.
 - **A diagnostics screen** recording every sign-in attempt that reaches a connection, with the
-  stage it got to, the outcome, a machine reason code (`signature_invalid`, `state_rejected`, …),
+  stage it got to, the outcome, a machine reason code (`domain_not_allowed`, `state_rejected`, …),
   the attributes that arrived and the decision that was made. Provider values are masked when
   written; history is pruned to 30 days or 2000 rows.
 - **Single Logout** (SAML only, one direction, opt-in: it needs your provider's logout URL and an
@@ -62,9 +62,11 @@ panel.
 - **SAML with Okta** (Integrator Free Plan) — verified end to end on 17 September 2026 against a
   live tenant and a fresh Craft 5.11 install on default settings: the first sign-in created the
   account just in time with the mapped group, the second updated it and reached the control panel.
-- **OpenID Connect** — shipped and covered by automated checks against a real Keycloak realm's
-  discovery document, JWKS and a real id token, but **not yet run end to end in a browser**; the
-  checks cover neither the HTTPS transport nor the full id-token reader.
+- **OpenID Connect with Keycloak 26.0** — verified end to end on 30 September 2026 against a live
+  Craft 5.11 install on PHP 8.2, over HTTPS with certificate verification: Authorization Code
+  with PKCE (`S256`), a confidential and a public client, `RS256` id tokens, first and repeat
+  sign-in, and refusals (wrong client secret, domain not allowed, no matching group). Not
+  covered: `ES256` id tokens, key rotation, and any OpenID Connect provider other than Keycloak.
 - **Microsoft Entra ID** — the guide is written and **not yet verified against a live tenant**;
   the guide itself says so.
 
@@ -79,6 +81,9 @@ panel.
 - **A `transient` NameID format cannot be used.** Accounts are recognised on later logins by their
   subject, and a transient NameID is a new value every time, so the second login of every user is
   refused. Configure `persistent` or `emailAddress` at the provider.
+- **Encrypted SAML assertions are unverified.** Decryption is implemented (**SP private key**),
+  but it is not covered by an automated test and has not been run against a live provider. Test
+  it yourself before relying on it.
 - **No SCIM, no LDAP**, and the plugin is not an identity provider itself.
 - **No field for an SP certificate**, so a site using encrypted assertions has to hand that
   certificate to its provider out of band.

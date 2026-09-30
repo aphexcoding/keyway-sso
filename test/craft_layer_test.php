@@ -553,6 +553,28 @@ $cases = [
         );
     },
 
+    // Nothing in the product pointed at the documentation before this link. It sits outside every
+    // conditional block on purpose - the person who needs a guide most is the one with `Disabled`
+    // still selected - and it must not navigate away from a half-filled form.
+    'the settings screen links to the documentation, in a new tab' => static function (): void {
+        $basePath = dirname((string)(new ReflectionClass(Plugin::class))->getFileName());
+        $settingsTemplate = (string)file_get_contents($basePath . '/templates/_settings.twig');
+        $composer = json_decode(
+            (string)file_get_contents(dirname($basePath) . '/composer.json'),
+            true,
+            flags: JSON_THROW_ON_ERROR
+        );
+
+        $link = '<a href="' . $composer['extra']['documentationUrl'] . '" target="_blank" rel="noopener">';
+
+        Assert::same('https://keyway.aphexcoding.tech/', $composer['extra']['documentationUrl']);
+        Assert::same(1, substr_count($settingsTemplate, $link), 'the address Craft is told about, once');
+        Assert::true(
+            strpos($settingsTemplate, $link) < strpos($settingsTemplate, '<h2>'),
+            'above the first section, so it is not hidden with a protocol block'
+        );
+    },
+
     // ------------------------------------------------------------------------------------
     // PASSWORD FALLBACK ENFORCEMENT.
     //

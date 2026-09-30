@@ -49,9 +49,12 @@
     'session': "Session"|t('keyway-sso'),
 } %}
 
+{# `saml2` AND `saml`: a login row carries the reader's identifier (`saml2`), a logout row and
+   the filter option carry `saml`. Both are the same protocol to the person reading the table. #}
 {% set protocolLabels = {
     'saml': "SAML 2.0"|t('keyway-sso'),
-    'oidc': "OIDC"|t('keyway-sso'),
+    'saml2': "SAML 2.0"|t('keyway-sso'),
+    'oidc': "OpenID Connect"|t('keyway-sso'),
 } %}
 
 {% macro value(item, depth) %}
@@ -89,9 +92,51 @@
 {% import _self as ui %}
 
 {% block content %}
+    {# The screen's own layout, inline because it is forty lines and this plugin ships no asset
+       bundle. Nothing in here is a row value: it is a constant block, so the "no raw output"
+       rule above is untouched. Two things it exists for:
+       - the filter bar. Craft's `.tablepane` carries a negative top margin (it is designed to
+         be the first thing in a pane), so directly under a form it slid over the form's last
+         22px - the selects and the Apply button were cut and the search hint was hidden;
+       - the expanded entry, which without it was one value per line, three screens tall. #}
+    <style>
+        .keyway-diagnostics-filters { margin: 24px 0; }
+        .keyway-diagnostics-filters > .flex { align-items: flex-start; gap: 14px; flex-wrap: wrap; }
+        .keyway-diagnostics-filters .field { margin: 0; }
+        .keyway-diagnostics-filters .buttons { margin: 0; }
+        .keyway-diagnostics-filters .keyway-diagnostics-search { flex: 1 1 260px; max-width: 680px; }
+        .keyway-diagnostics-detail > summary { cursor: pointer; }
+        .keyway-diagnostics-detail[open] { padding-bottom: 14px; }
+        .keyway-diagnostics-sections {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 8px 32px;
+            margin: 14px 0;
+        }
+        .keyway-diagnostics-sections h3 { margin: 0 0 8px; }
+        .keyway-diagnostics-pairs {
+            display: grid;
+            grid-template-columns: fit-content(45%) minmax(0, 1fr);
+            gap: 4px 14px;
+            margin: 0;
+        }
+        .keyway-diagnostics-pairs dt, .keyway-diagnostics-pairs dd { margin: 0; }
+        .keyway-diagnostics-sections dt, .keyway-diagnostics-sections dd, .keyway-diagnostics-sections li { overflow-wrap: anywhere; }
+        .keyway-diagnostics-tree { margin: 0; padding: 0; list-style: none; }
+        .keyway-diagnostics-tree li { margin: 0 0 4px; }
+        .keyway-diagnostics-tree .keyway-diagnostics-tree { margin-top: 4px; padding-inline-start: 18px; }
+        .keyway-diagnostics-pairs .keyway-diagnostics-tree li { display: inline; }
+        .keyway-diagnostics-pairs .keyway-diagnostics-tree li + li::before { content: "\00B7"; }
+    </style>
+
     <div class="readable">
         <p>
             {{ "Every sign-in attempt this site handled, newest first. A visitor is never told why a login was refused - the reason is here instead."|t('keyway-sso') }}
+        </p>
+        {# Where a reason code is explained. A literal address rather than a controller
+           variable: it is ours, it is not input, and it does not depend on the install. #}
+        <p>
+            <a href="https://keyway.aphexcoding.tech/craft-cms-sso-not-working" target="_blank" rel="noopener">{{ "Look up a reason code in the troubleshooting guide (opens in a new tab)"|t('keyway-sso') }}</a>
         </p>
     </div>
 
@@ -154,7 +199,7 @@
                 </div>
             </div>
 
-            <div class="field">
+            <div class="field keyway-diagnostics-search">
                 <div class="heading">
                     <label for="keyway-filter-search">{{ "Search"|t('keyway-sso') }}</label>
                 </div>
@@ -215,7 +260,9 @@
 
     {% else %}
 
-        <div class="tablepane">
+        {# margin-top: 0 inline, not in the block above: it has to win over Craft's own
+           `.tablepane` rule whatever that rule's specificity is in this Craft version. #}
+        <div class="tablepane" style="margin-top: 0;">
             <table class="data fullwidth keyway-diagnostics">
                 <caption class="visually-hidden">
                     {{ "Single sign-on attempts, newest first. Each row can be expanded for the attributes that arrived, what they mapped to, and what was decided."|t('keyway-sso') }}
@@ -274,31 +321,39 @@
                                         <p>{{ row.message }}</p>
                                     </div>
 
-                                    <h3>{{ "Attributes received"|t('keyway-sso') }}</h3>
-                                    {% if row.attributes() is empty %}
-                                        <p class="light">{{ "Nothing arrived, or the attempt failed before attributes were read."|t('keyway-sso') }}</p>
-                                    {% else %}
-                                        <dl class="keyway-diagnostics-pairs">
-                                            {% for name, values in row.attributes() %}
-                                                <dt><code>{{ name }}</code></dt>
-                                                <dd>{{ ui.value(values, 0) }}</dd>
-                                            {% endfor %}
-                                        </dl>
-                                    {% endif %}
+                                    <div class="keyway-diagnostics-sections">
+                                        <section>
+                                            <h3>{{ "Attributes received"|t('keyway-sso') }}</h3>
+                                            {% if row.attributes() is empty %}
+                                                <p class="light">{{ "Nothing arrived, or the attempt failed before attributes were read."|t('keyway-sso') }}</p>
+                                            {% else %}
+                                                <dl class="keyway-diagnostics-pairs">
+                                                    {% for name, values in row.attributes() %}
+                                                        <dt><code>{{ name }}</code></dt>
+                                                        <dd>{{ ui.value(values, 0) }}</dd>
+                                                    {% endfor %}
+                                                </dl>
+                                            {% endif %}
+                                        </section>
 
-                                    <h3>{{ "Mapped to"|t('keyway-sso') }}</h3>
-                                    {% if row.mapping() is empty %}
-                                        <p class="light">{{ "Nothing was mapped."|t('keyway-sso') }}</p>
-                                    {% else %}
-                                        {{ ui.value(row.mapping(), 0) }}
-                                    {% endif %}
+                                        <section>
+                                            <h3>{{ "Mapped to"|t('keyway-sso') }}</h3>
+                                            {% if row.mapping() is empty %}
+                                                <p class="light">{{ "Nothing was mapped."|t('keyway-sso') }}</p>
+                                            {% else %}
+                                                {{ ui.value(row.mapping(), 0) }}
+                                            {% endif %}
+                                        </section>
 
-                                    <h3>{{ "Decision"|t('keyway-sso') }}</h3>
-                                    {% if row.decision() is empty %}
-                                        <p class="light">{{ "The attempt ended before a decision was made."|t('keyway-sso') }}</p>
-                                    {% else %}
-                                        {{ ui.value(row.decision(), 0) }}
-                                    {% endif %}
+                                        <section>
+                                            <h3>{{ "Decision"|t('keyway-sso') }}</h3>
+                                            {% if row.decision() is empty %}
+                                                <p class="light">{{ "The attempt ended before a decision was made."|t('keyway-sso') }}</p>
+                                            {% else %}
+                                                {{ ui.value(row.decision(), 0) }}
+                                            {% endif %}
+                                        </section>
+                                    </div>
 
                                     <p class="light">
                                         {{ "Entry ID"|t('keyway-sso') }}: <code>{{ row.id }}</code>

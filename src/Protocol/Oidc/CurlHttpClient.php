@@ -23,7 +23,8 @@ use Keyway\Sso\Core\Port\HttpClientInterface;
  *  - CURLOPT_SSL_VERIFYPEER / VERIFYHOST: on, always. There is no constructor flag, no setting
  *    and no environment variable that changes this. Without it, anyone on the path between the
  *    site and the IdP can serve their own JWKS and mint identities.
- *  - HTTPS only (CURLOPT_PROTOCOLS_STR): a plain-HTTP back-channel call would hand the same
+ *  - HTTPS only (CURLOPT_PROTOCOLS, the bitmask form — the `_STR` constants only exist from
+ *    PHP 8.3 and the plugin supports 8.2): a plain-HTTP back-channel call would hand the same
  *    power to anyone on the path, and a token endpoint call would leak the client secret.
  *  - No redirect following: a 302 is the cheapest way to move a back-channel request from the
  *    configured issuer to somewhere else. Nothing in OIDC discovery needs one.
@@ -109,7 +110,6 @@ final class CurlHttpClient implements HttpClientInterface
         $ok = curl_exec($handle);
         $error = curl_error($handle);
         $status = (int)curl_getinfo($handle, CURLINFO_RESPONSE_CODE);
-        curl_close($handle);
 
         if ($tooLarge) {
             throw new HttpTransportException(sprintf(
@@ -155,8 +155,8 @@ final class CurlHttpClient implements HttpClientInterface
             CURLOPT_MAXREDIRS => 0,
             CURLOPT_SSL_VERIFYPEER => true,
             CURLOPT_SSL_VERIFYHOST => 2,
-            CURLOPT_PROTOCOLS_STR => 'https',
-            CURLOPT_REDIR_PROTOCOLS_STR => 'https',
+            CURLOPT_PROTOCOLS => CURLPROTO_HTTPS,
+            CURLOPT_REDIR_PROTOCOLS => CURLPROTO_HTTPS,
             CURLOPT_CONNECTTIMEOUT => $this->connectTimeout,
             CURLOPT_TIMEOUT => $this->timeout,
             CURLOPT_USERAGENT => $this->userAgent,

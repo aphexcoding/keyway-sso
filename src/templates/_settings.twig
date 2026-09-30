@@ -24,6 +24,14 @@
     {% endfor %}
 {% endif %}
 
+{# The way out of this screen for somebody who is stuck. Nothing else in the plugin points at the
+   documentation, and a guide nobody can find is a guide nobody reads. The address is the one in
+   composer.json (`extra.documentationUrl`); it opens in a new tab because this is a form, and
+   leaving it would throw away whatever was typed and not yet saved. #}
+<p>
+    <a href="https://keyway.aphexcoding.tech/" target="_blank" rel="noopener">{{ "Setup guides for Keycloak, Okta and Microsoft Entra ID (opens in a new tab)"|t('keyway-sso') }}</a>
+</p>
+
 {% if settings.protocol != 'disabled' and not ready %}
     <p class="warning with-icon">
         {{ "Single sign-on is selected but the connection is not usable yet, so the login screen keeps password login only. Fix the errors below and save again."|t('keyway-sso') }}
@@ -139,7 +147,7 @@
         <div class="instructions">
             <p>
                 {% if metadataReady %}
-                    {{ "Most identity providers can configure themselves from this file - upload it to Okta, Keycloak or Entra ID instead of typing the entity ID and ACS URL by hand. Some fetch the address directly and re-read it on a schedule."|t('keyway-sso') }}
+                    {{ "Some identity providers can read this file instead of having the entity ID and ACS URL typed by hand - whether yours can is in its own documentation. We have not tested the import with any provider."|t('keyway-sso') }}
                 {% else %}
                     {{ "Available once SAML is selected above and both the SP entity ID and the ACS URL are filled in. Until then this address answers 404 on purpose: a metadata file naming a blank entity ID would configure your identity provider against a sign-in that can never validate."|t('keyway-sso') }}
                 {% endif %}

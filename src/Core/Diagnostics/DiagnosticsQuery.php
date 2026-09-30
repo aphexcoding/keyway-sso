@@ -51,6 +51,27 @@ final class DiagnosticsQuery
      */
     public const PROTOCOLS = ['saml', 'oidc'];
 
+    /**
+     * What a stored row's `protocol` column can hold for each filter value above.
+     *
+     * The two are NOT the same vocabulary, and assuming they were is the bug this map fixes:
+     * the filter speaks Config\AuthProtocol (`saml`), while a login row is written with
+     * IdentityReaderInterface::protocol(), which for SAML answers `saml2`. Only the logout rows
+     * (InboundLogoutFlow::PROTOCOL) say `saml`. A filter that compared the column to `saml`
+     * therefore hid every SAML login and showed "No entries match".
+     *
+     * The mapping lives on the READ side on purpose. Rows already written keep whatever they
+     * were written with, so translating here makes old and new rows filter alike, and the
+     * writers - whose identifier also names the state record - stay untouched.
+     * diagnostics_store_test pins every real writer's value against this map.
+     *
+     * @var array<string, list<string>>
+     */
+    public const STORED_PROTOCOLS = [
+        'saml' => ['saml', 'saml2'],
+        'oidc' => ['oidc'],
+    ];
+
     private ?string $outcome;
     private ?string $protocol;
     private ?string $search;
@@ -108,6 +129,17 @@ final class DiagnosticsQuery
     public function protocol(): ?string
     {
         return $this->protocol;
+    }
+
+    /**
+     * The `protocol` column values the protocol filter selects; empty means "all protocols".
+     * This, not protocol(), is what a storage query must compare the column against.
+     *
+     * @return list<string>
+     */
+    public function storedProtocols(): array
+    {
+        return $this->protocol === null ? [] : self::STORED_PROTOCOLS[$this->protocol];
     }
 
     /** Trimmed and byte-capped; null when the caller effectively searched for nothing. */

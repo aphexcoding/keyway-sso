@@ -5,8 +5,7 @@ document, its JWKS (including the realm's `sig` / `enc` key layout) and a real i
 a real realm key are read by `bin/smoke-keycloak.php` against a live realm. **SAML was verified
 end to end on 17 September 2026** against a live Keycloak 26.0 realm and a live Craft install:
 sign-in, attribute and group mapping, account creation, and the IdP-initiated logout path of
-step 7. **OpenID Connect has not been run end to end** — for it the smoke check above is all
-the proof there is.
+step 7. **OpenID Connect was verified end to end on 30 September 2026 against a Keycloak 26.0 realm and a live Craft 5.11 install on PHP 8.2, over HTTPS with certificate verification: Authorization Code with PKCE (`S256`), a confidential and a public client, `RS256` id tokens, first sign-in (account created with mapped fields and group), repeat sign-in, and refusals (wrong client secret, domain not allowed, no matching group). Not covered: `ES256` id tokens, key rotation, and any OpenID Connect provider other than Keycloak.**
 
 This guide covers **both protocols**. Read Step 2 twice if you are undecided: SAML is the safer
 default when your Craft site is not served over `https` yet, because OpenID Connect refuses
@@ -29,6 +28,13 @@ same wording.
   `<KEYCLOAK_BASE>/realms/<REALM>`; you will paste variants of that string several times.
 * For OpenID Connect only: your Craft site must be served over `https`, and its redirect URI must
   not carry a query string (see Step 1).
+* For OpenID Connect only: **the Craft server itself must be able to reach Keycloak over `https`**,
+  not just the visitor's browser. The plugin fetches the discovery document and the signing keys
+  and exchanges the code from the server, and it verifies Keycloak's certificate against the
+  server's own CA store — there is no switch to turn that off. A Keycloak behind a private or
+  self-signed certificate authority works only after that CA has been installed on the Craft
+  server (for PHP's cURL, the operating system's CA bundle). A certificate the server does not
+  trust shows up as `discovery_failed` in the diagnostics.
 
 ---
 
@@ -69,8 +75,8 @@ answers **404** on purpose.
    **Client ID** of a SAML client in Keycloak *is* the SP entity ID, so it must be exactly the
    string you will put in **SP entity ID** on the Craft side — the **This site's URL** copy field
    from Step 1 (this site's URL without a trailing slash) is the usual choice.
-   *(If you prefer to configure Keycloak from our metadata file rather than by hand, you can: but
-   the file exists only after the complete configuration has been saved in Step 3, so that route
+   *(If you prefer to configure Keycloak from our metadata file rather than by hand, you can try —
+   we have not tested the import — but the file exists only after the complete configuration has been saved in Step 3, so that route
    means creating the client roughly as below, finishing Step 3, and then re-importing the
    document over it. Either way the entity ID and the ACS URL must end up identical on both
    sides — they are compared character for character.)*
@@ -123,8 +129,8 @@ answers **404** on purpose.
 
 1. In the realm, go to **Clients** and create a new client with client type **OpenID Connect**.
    The **Client ID** you choose here is what goes into **Client ID** on the Craft side.
-2. Turn **client authentication** on (a confidential client). A public client also works — the
-   plugin always uses PKCE with `S256` — but then leave **Client secret** empty on the Craft side.
+2. Turn **client authentication** on (a confidential client). A public client is also supported — the
+   plugin always uses PKCE with `S256` — (verified on 30 September 2026, with Keycloak enforcing `S256`) but then leave **Client secret** empty on the Craft side.
    An empty-looking secret that is really an unresolved environment reference is treated as "no
    secret", which silently downgrades a confidential client, so the plugin refuses to sign anyone
    in until the reference resolves.
@@ -289,13 +295,29 @@ of your own control panel.
    stage it reached (`Protocol`, `Login state`, `Attributes`, `Groups`, `Provisioning`,
    `Session`), a machine reason code, the subject and the issuer. Open **Details** to see the
    attributes that arrived, what they mapped to, and the decision.
-4. The reason code is the thing to act on. A few you are likely to meet on a first attempt:
+4. The reason code is the thing to act on. When the provider's response itself is refused, the
+   **Reason** column reads `identity_rejected` and the specific code stands in round brackets at
+   the end of the message under **Details**. A few you are likely to meet on a first attempt:
    `signature_invalid` (wrong certificate in **IdP signing certificate**), `issuer_mismatch`
    (**IdP entity ID** does not match what Keycloak sends), `audience_mismatch` (**SP entity ID**
    does not match the client ID), `destination_mismatch` (**ACS URL** is not the address the
    assertion was posted to), `unsolicited_response` (the response does not belong to a login this
    site started), `jit_disabled`, `linking_disabled`, `domain_not_allowed`, `no_group_match`.
    [troubleshooting.md](troubleshooting.md) goes through them one by one.
+
+   Over OpenID Connect the first-attempt failures look different, because the fields are
+   different:
+   * `start_failed` with `(discovery_failed)` — pressing the button never reaches Keycloak. The
+     **Issuer** points at a realm that does not exist, or the Craft server cannot reach or does
+     not trust Keycloak's `https` certificate.
+   * `start_failed` with `(issuer_mismatch)` — the **Issuer** differs from what the realm
+     publishes — a trailing slash is enough.
+   * `identity_rejected` with `(malformed_response)` right after a successful sign-in at Keycloak
+     — the token endpoint refused the code exchange. With a confidential client that is nearly
+     always a wrong **Client secret**. The row does not quote Keycloak's answer.
+   * `identity_rejected` with `(discovery_failed)` after the sign-in at Keycloak — the code
+     exchange could not be completed at all: the Craft server lost its route to Keycloak, or does
+     not trust its certificate.
 5. If the screen says the diagnostics store is unavailable, the plugin's migration has not run —
    `php craft up`.
 
@@ -373,8 +395,10 @@ see [okta.md](okta.md)). Treat both as unverified rather than as working.
   match the path form.
 * **Only `RS256` and `ES256`** id-token signatures are accepted. Keycloak's default realm key is
   RS256, so this only matters if somebody changed it.
-* **Encrypted assertions** work (**SP private key**), but the metadata document publishes no key
-  material, so the matching SP certificate has to reach Keycloak by another route.
+* **Encrypted assertions** are implemented (**SP private key**) but **unverified** — not covered
+  by an automated test and not run against a live Keycloak realm, so test before relying on
+  them. The metadata document also publishes no key material, so the matching SP certificate has
+  to reach Keycloak by another route.
 * **The password fallback refuses a sign-in rather than hiding the password form**, and only on
   the control panel (Step 5).
 

@@ -116,7 +116,7 @@ $jitCreate = static function (MappedAttributes $attributes): ProvisioningDecisio
     return new ProvisioningDecision(
         ProvisioningAction::Create,
         ProvisioningDecision::JIT_CREATE,
-        'No account matched; a new one will be created from the mapped attributes.',
+        'No account matched; creating a new one from the mapped attributes.',
         $attributes,
         new GroupAssignment([], [], [], false, false, false, false, GroupSyncMode::Append),
         UserMatchKey::Email,

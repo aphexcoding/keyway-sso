@@ -271,7 +271,7 @@ final class ProvisioningPolicy
                 return new ProvisioningDecision(
                     ProvisioningAction::Update,
                     ProvisioningDecision::UPDATE_ON_LOGIN,
-                    'Existing account matched; mapped attributes and groups will be applied.',
+                    'Existing account matched; applying the mapped attributes and groups.',
                     $attributes,
                     $groups,
                     $matchBy,
@@ -319,7 +319,7 @@ final class ProvisioningPolicy
         return new ProvisioningDecision(
             ProvisioningAction::Create,
             ProvisioningDecision::JIT_CREATE,
-            'No account matched; a new one will be created from the mapped attributes.',
+            'No account matched; creating a new one from the mapped attributes.',
             $attributes,
             $groups,
             $matchBy,
